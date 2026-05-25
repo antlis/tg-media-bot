@@ -1,0 +1,17 @@
+# Core bot framework
+aiogram>=3.4.0,<4.0
+
+# Async support
+aiohttp>=3.9.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Structured logging
+structlog>=24.0.0
+
+# yt-dlp (system install, but include for API reference)
+# yt-dlp>=2024.0.0
+
+# ffmpeg (system install required)
+# ffmpeg-python>=0.2.0
