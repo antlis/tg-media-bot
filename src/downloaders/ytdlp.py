@@ -229,14 +229,6 @@ class YtDlpDownloader:
 
             file_size = output_file.stat().st_size
 
-            # Check file size limit
-            if file_size > self.settings.max_file_size_bytes:
-                output_file.unlink()
-                return DownloadResult(
-                    success=False,
-                    error=f"File too large ({file_size / (1024*1024):.1f}MB > {self.settings.max_file_size_mb}MB limit)",
-                    platform=platform,
-                )
 
             return DownloadResult(
                 success=True,
@@ -304,11 +296,6 @@ class YtDlpDownloader:
         cmd.extend([
             "--write-thumbnail",
             "--convert-thumbnails", "jpg",
-        ])
-
-        # Limits
-        cmd.extend([
-            "--max-filesize", f"{self.settings.max_file_size_mb}M",
         ])
 
         # Timeout

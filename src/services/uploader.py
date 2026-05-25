@@ -73,8 +73,14 @@ class UploaderService:
             return message
 
         except Exception as e:
-            logger.error(f"Video upload failed: {e}")
-            return None
+            logger.error(f"Video upload failed, trying as document: {e}")
+            # Fall back to document upload for large files
+            return await self.upload_document(
+                chat_id=chat_id,
+                file_path=file_path,
+                caption=caption,
+                reply_to_message_id=reply_to_message_id,
+            )
 
     async def upload_audio(
         self,

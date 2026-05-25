@@ -182,14 +182,27 @@ class BotHandlers:
                     task.duration or 0,
                 )
             else:
+                size_mb = result.file_size / (1024 * 1024)
+                error_msg = (
+                    f"❌ Upload failed.\n"
+                    f"File: {result.output_path.name}\n"
+                    f"Size: {size_mb:.1f}MB\n\n"
+                )
+                if size_mb > 50:
+                    error_msg += (
+                        "Telegram Bot API has a 50MB upload limit.\n"
+                        "Consider using a Local Bot API Server for larger files."
+                    )
+                else:
+                    error_msg += "Telegram rejected the file."
                 await self._update_status_message(
                     chat_id, status_msg_id,
-                    "❌ Upload failed. File may be too large for Telegram."
+                    error_msg,
                 )
                 self.queue.update_task_status(
                     task.task_id,
                     DownloadStatus.FAILED,
-                    error_message="Upload failed",
+                    error_message=f"Upload failed ({size_mb:.1f}MB)",
                 )
 
         except Exception as e:

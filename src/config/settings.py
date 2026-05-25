@@ -22,7 +22,6 @@ class Settings:
     temp_dir: Path = Path("/tmp/tg-media-bot")
 
     # Limits
-    max_file_size_mb: int = 200
     max_parallel_downloads: int = 3
     download_timeout: int = 3600  # seconds
 
@@ -31,6 +30,9 @@ class Settings:
 
     # Rate limiting
     rate_limit_per_user: int = 2  # concurrent downloads per user
+
+    # Local Bot API Server (for uploads >50MB)
+    api_server_url: str = ""
 
     # yt-dlp options
     use_browser_cookies: bool = True
@@ -45,9 +47,6 @@ class Settings:
         # Ensure temp_dir exists
         self.temp_dir = Path(self.temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-
-        # Convert max_file_size_mb to bytes
-        self.max_file_size_bytes = self.max_file_size_mb * 1024 * 1024
 
         # Normalize log level
         self.log_level = self.log_level.upper()
@@ -69,7 +68,7 @@ def _load_settings() -> Settings:
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
         temp_dir=Path(os.getenv("TEMP_DIR", "/tmp/tg-media-bot")),
-        max_file_size_mb=int(os.getenv("MAX_FILE_SIZE_MB", "200")),
+        api_server_url=os.getenv("API_SERVER_URL", ""),
         max_parallel_downloads=int(os.getenv("MAX_PARALLEL_DOWNLOADS", "3")),
         download_timeout=int(os.getenv("DOWNLOAD_TIMEOUT", "3600")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),

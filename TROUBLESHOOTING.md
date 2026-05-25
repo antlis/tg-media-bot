@@ -79,13 +79,12 @@ ffmpeg -version | head -1
 - Use `/status` to see active downloads
 - Cancel unused tasks with `/cancel <task_id>`
 
-### "File too large"
+### "File too large" / Upload failed
 
-**Problem:** File exceeds Telegram limits.
+**Problem:** File exceeds Telegram Bot API upload limit (50MB).
 
 **Solutions:**
-- Telegram limit: 50MB (free), 2000MB (premium)
-- Configured limit in `.env`: `MAX_FILE_SIZE_MB=200`
+- Use the Local Bot API Server (see INSTALLATION.md) for uploads up to 2GB
 - Try `/audio` mode for smaller files
 
 ### "Could not fetch formats"
@@ -260,7 +259,7 @@ If issues persist:
 |--------|-------|----------|
 | "Invalid URL" | Malformed URL | Ensure starts with http:// or https:// |
 | "Rate limit reached" | Too many downloads | Wait or cancel tasks |
-| "File too large" | Exceeds limits | Use audio mode |
+| "File too large" | Exceeds 50MB Bot API limit | Use Local Bot API Server or audio mode |
 | "Download failed" | Various | Check URL, network |
 | "Upload failed" | Telegram issue | Retry later |
 | "yt-dlp not found" | Not installed | Install yt-dlp |

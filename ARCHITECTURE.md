@@ -98,7 +98,7 @@ Key features:
 **uploader.py**
 - Uploads video/audio/documents
 - Handles Telegram API errors
-- Respects file size limits
+- Falls back to document upload for large videos
 - Progress messages
 
 ### Config Layer (`src/config/`)
@@ -156,7 +156,6 @@ Key features:
 3. **Filename sanitization**: Removes path separators, dangerous chars
 4. **Path traversal prevention**: relative_to() check
 5. **Rate limiting**: Per-user concurrent download limits
-6. **File size limits**: Configurable max file size
 
 ## Error Handling
 

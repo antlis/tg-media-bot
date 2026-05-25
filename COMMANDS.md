@@ -247,11 +247,12 @@ Unsupported URL
 ```
 
 ```
-❌ File too large (250MB > 200MB limit)
-```
+❌ Upload failed.
+File: video.mp4
+Size: 125.0MB
 
-```
-❌ Upload failed. File may be too large for Telegram.
+Telegram Bot API has a 50MB upload limit.
+Consider using a Local Bot API Server for larger files.
 ```
 
 ## Supported Platforms

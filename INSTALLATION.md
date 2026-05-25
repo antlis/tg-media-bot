@@ -85,7 +85,6 @@ Edit these values:
 ```env
 BOT_TOKEN=123456789:ABCDefGhIJKlmNoPQRsTUVwxYZ
 TEMP_DIR=/tmp/tg-media-bot
-MAX_FILE_SIZE_MB=200
 ```
 
 ### 7. Create Temp Directory
@@ -202,6 +201,66 @@ rm -rf ~/projects/tg-media-bot
 # Clean temp
 rm -rf /tmp/tg-media-bot
 ```
+
+## Docker Deployment (with Local Bot API Server)
+
+Running via Docker with the Local Bot API Server removes the 50MB upload limit,
+allowing uploads up to 2GB.
+
+### 1. Get Telegram API Credentials
+
+You need an `API_ID` and `API_HASH` from https://my.telegram.org/apps
+
+1. Go to https://my.telegram.org and log in with your phone number
+2. Click "API development tools"
+3. Fill in the form:
+   - **App title:** `My Bot`
+   - **Short name:** `mybot`
+   - **URL:** `https://example.com`
+   - **Platform:** `Web`
+   - **Description:** `Bot`
+4. Submit and copy the `api_id` and `api_hash`
+
+**Known issues with my.telegram.org:**
+- The site shows a generic "ERROR" alert with no explanation
+- If using a VPN, **disconnect it** — the site checks for IP/region mismatch
+  with your phone number (especially problematic with Russian numbers + foreign VPN)
+- Try from a **mobile browser** on the same network as your phone
+- Having **Telegram Desktop** logged in and active can help
+- Try a different browser, or clear cookies and log in again
+- The site is genuinely broken sometimes — try again a few hours later
+- New Telegram accounts may need to be a few days old
+
+### 2. Configure
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Fill in `BOT_TOKEN`, `TELEGRAM_API_ID`, and `TELEGRAM_API_HASH`.
+
+### 3. Run
+
+```bash
+docker compose up -d
+```
+
+### 4. Stop
+
+```bash
+docker compose down
+```
+
+### 5. View Logs
+
+```bash
+docker compose logs -f bot
+```
+
+**Note:** Browser cookies (`USE_BROWSER_COOKIES`) are disabled in Docker since
+there's no browser inside the container. For age-restricted content you would
+need to mount a cookies file instead.
 
 ## Troubleshooting
 
