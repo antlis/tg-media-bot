@@ -10,6 +10,12 @@ services:
     ports:
       - "8082:8081"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8081/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   bot:
     build: .
@@ -20,7 +26,8 @@ services:
     volumes:
       - bot-downloads:/tmp/tg-media-bot
     depends_on:
-      - telegram-bot-api
+      telegram-bot-api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
