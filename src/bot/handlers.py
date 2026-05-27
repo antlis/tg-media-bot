@@ -161,6 +161,10 @@ class BotHandlers:
                 file_path=result.output_path,
                 media_format=task.preferred_format,
                 title=result.title,
+                performer=result.performer,
+                duration=result.duration,
+                thumbnail_path=result.thumbnail_path,
+                source_url=task.url,
             )
 
             if upload_result:

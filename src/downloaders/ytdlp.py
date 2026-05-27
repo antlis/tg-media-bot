@@ -29,6 +29,8 @@ class DownloadResult:
     platform: str = ""
     duration: float = 0.0
     error: str = ""
+    performer: str = ""
+    thumbnail_path: Optional[Path] = None
 
 
 class YtDlpDownloader:
@@ -229,12 +231,24 @@ class YtDlpDownloader:
 
             file_size = output_file.stat().st_size
 
+            # Collect cover art + metadata (audio downloads write these)
+            thumbnail_file = self._find_thumbnail(output_dir)
+            meta = self._read_info_json(output_dir)
+            title = meta.get("track") or meta.get("title") or output_file.stem
+            performer = meta.get("artist") or meta.get("uploader") or ""
+            try:
+                duration = float(meta.get("duration") or 0.0)
+            except (TypeError, ValueError):
+                duration = 0.0
 
             return DownloadResult(
                 success=True,
                 output_path=output_file,
                 file_size=file_size,
-                title=output_file.stem,
+                title=title,
+                performer=performer,
+                duration=duration,
+                thumbnail_path=thumbnail_file,
                 platform=platform,
             )
 
@@ -278,6 +292,12 @@ class YtDlpDownloader:
                 "-x",
                 "--audio-format", "mp3",
                 "--audio-quality", "0",
+                # Bake cover art + tags into the mp3 itself
+                "--embed-thumbnail",
+                "--embed-metadata",
+                # Sidecar metadata so we can read title/artist/duration without
+                # a second network call (used to set the Telegram audio fields)
+                "--write-info-json",
             ])
         elif preferred_format == MediaFormat.VIDEO:
             # Best video + audio, merge if needed - with fallback to format 18
@@ -332,6 +352,37 @@ class YtDlpDownloader:
 
         # Return largest file (main content)
         return max(files, key=lambda f: f.stat().st_size)
+
+    def _find_thumbnail(self, directory: Path) -> Optional[Path]:
+        """Find the downloaded cover-art image, if any."""
+        if not directory.exists():
+            return None
+
+        thumb_extensions = (".jpg", ".jpeg", ".png", ".webp")
+        thumbs = [
+            f for f in directory.iterdir()
+            if f.is_file() and f.suffix.lower() in thumb_extensions
+        ]
+        if not thumbs:
+            return None
+
+        # Prefer jpg (yt-dlp converts to jpg via --convert-thumbnails)
+        thumbs.sort(key=lambda f: (f.suffix.lower() != ".jpg", f.name))
+        return thumbs[0]
+
+    def _read_info_json(self, directory: Path) -> dict:
+        """Read the yt-dlp .info.json sidecar, if present."""
+        if not directory.exists():
+            return {}
+
+        for f in directory.iterdir():
+            if f.is_file() and f.name.endswith(".info.json"):
+                try:
+                    return json.loads(f.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as e:
+                    logger.debug(f"Could not read info json: {e}")
+                    return {}
+        return {}
 
     def format_formats_list(self, formats: List[dict]) -> str:
         """Format formats list for display."""

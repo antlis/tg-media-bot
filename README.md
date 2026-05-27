@@ -13,7 +13,10 @@ This bot downloads media from 1000+ platforms using yt-dlp and uploads the files
 - Per-user rate limiting
 - Automatic temporary file cleanup
 - Uploads up to 2GB via a bundled local Telegram Bot API server (vs. 50MB on the standard API)
+- Audio downloads include embedded + attached cover art and title/artist/duration metadata
+- Each result post shows the original source URL as plain (non-linked) text
 - Firefox cookie support for authenticated downloads (non-Docker only)
+- Unit-tested with pytest
 
 ## Project Structure
 
@@ -44,6 +47,7 @@ tg-media-bot/
 │   └── utils/
 │       ├── logger.py    # Structured logging
 │       └── sanitizer.py # Filename sanitization
+└── tests/               # pytest suite (see Testing)
 ```
 
 ## Quick Start (Docker — recommended)
@@ -94,7 +98,7 @@ cp .env.example .env   # set BOT_TOKEN, ALLOWED_USERS
 python main.py
 ```
 
-See [[INSTALLATION|Installation Guide]] for systemd service setup and Firefox cookie configuration.
+See [Installation Guide](INSTALLATION.md) for systemd service setup and Firefox cookie configuration.
 
 ## Configuration
 
@@ -148,16 +152,31 @@ Notes:
 - `/audio` and `/video` set a **per-user** preference that persists until changed.
 - A download is queued per URL; `/status` reports each one's task ID, which `/cancel` consumes.
 - Per-user concurrency is bounded by `RATE_LIMIT_PER_USER`; the global cap is `MAX_PARALLEL_DOWNLOADS`.
+- **Audio posts** carry cover art (embedded in the MP3 and attached as the Telegram thumbnail) plus title, artist, and duration.
+- **Every post** includes the original source URL as monospace, non-linked text — copyable, but Telegram won't turn it into a link or fetch a preview.
 
-See [[COMMANDS|Command Reference]] for full examples and sample responses.
+See [Command Reference](COMMANDS.md) for full examples and sample responses.
+
+## Testing
+
+The test suite uses `pytest` (with `pytest-asyncio`) and covers the pure-logic units — config parsing, sanitization, URL extraction, platform detection, yt-dlp command building, the caption builder, the allowlist middleware, the queue, and ffmpeg thumbnail resizing. No network or Telegram access is required; downloads and `get_info` are mocked.
+
+```bash
+# In a virtualenv with dev deps
+pip install -r requirements-dev.txt
+pytest
+
+# Or, without managing a venv (uses uv)
+uv run --with pytest --with pytest-asyncio --with aiogram --with structlog \
+       --with python-dotenv --with aiohttp pytest
+```
+
+The thumbnail tests need `ffmpeg` on PATH; they're skipped automatically if it's missing. yt-dlp is not required — the version probe is patched out in tests.
 
 ## Documentation
 
-- [[ARCHITECTURE|Architecture Overview]]
-- [[INSTALLATION|Installation Guide]]
-- [[COMMANDS|Command Reference]]
-- [[TROUBLESHOOTING|Troubleshooting]]
-
-## Related
-
-[[../index|Back to Projects]]
+- [Architecture Overview](ARCHITECTURE.md)
+- [Installation Guide](INSTALLATION.md)
+- [Command Reference](COMMANDS.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
+- [Contributor guide for AI agents](CLAUDE.md)

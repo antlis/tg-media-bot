@@ -247,7 +247,7 @@ python main.py
 
 If issues persist:
 
-1. Check [[ARCHITECTURE|Architecture]] for understanding
+1. Check [Architecture](ARCHITECTURE.md) for understanding
 2. Enable DEBUG logging
 3. Check yt-dlp supported sites: `yt-dlp --list-extractors`
 4. Test URL directly: `yt-dlp <url>`

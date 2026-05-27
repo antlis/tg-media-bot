@@ -264,4 +264,4 @@ need to mount a cookies file instead.
 
 ## Troubleshooting
 
-See [[TROUBLESHOOTING]]
+See [Troubleshooting](TROUBLESHOOTING.md)

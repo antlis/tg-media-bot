@@ -21,11 +21,17 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 python main.py
 
-# Syntax check (no test suite exists)
+# Tests (pytest + pytest-asyncio)
+pip install -r requirements-dev.txt && pytest
+# …or without a venv:
+uv run --with pytest --with pytest-asyncio --with aiogram --with structlog \
+       --with python-dotenv --with aiohttp pytest
+
+# Syntax check
 python -m py_compile main.py src/**/*.py
 ```
 
-There is **no automated test suite**. Verify changes by running the bot and exercising it in Telegram, or by `docker compose exec -T bot python -c "..."` for config/logic spot-checks.
+Tests live in `tests/` and cover the pure-logic units (config parsing, sanitization, URL extraction, platform detection, yt-dlp command building, caption builder, allowlist middleware, queue, ffmpeg thumbnail resizing). They use **no network or Telegram**: `get_info`/downloads are mocked, and `tests/conftest.py` patches out the `yt-dlp --version` probe and sets a dummy `BOT_TOKEN`. `pytest.ini` sets `asyncio_mode = auto`, so `async def test_*` functions run directly. The ffmpeg-dependent thumbnail tests self-skip when ffmpeg is absent. After non-trivial changes, run pytest; for end-to-end behaviour also exercise the bot in Telegram or via `docker compose exec -T bot python -c "..."`.
 
 ## Architecture
 
@@ -36,9 +42,9 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 - `src/bot/handlers.py` — `BotHandlers`: URL extraction, queueing, the background download→upload→cleanup task, status-message editing.
 - `src/commands/handlers.py` — `CommandHandlers`: `/start /help /audio /video /cancel /status /formats`.
 - `src/config/settings.py` — `Settings` dataclass loaded once from env (`get_settings()` singleton). All config flows through here.
-- `src/downloaders/ytdlp.py` — `YtDlpDownloader`: subprocess wrapper around `yt-dlp`. Platform detection, format selection.
+- `src/downloaders/ytdlp.py` — `YtDlpDownloader`: subprocess wrapper around `yt-dlp`. Platform detection, format selection. Audio downloads also embed cover art + tags (`--embed-thumbnail/--embed-metadata`) and write `--write-info-json`; `_find_thumbnail()` / `_read_info_json()` surface cover art, title, artist, and duration on `DownloadResult`.
 - `src/queue/manager.py` — async queue + per-user concurrency limits.
-- `src/services/uploader.py` — `UploaderService`: sends video/audio/document, falls back to document for large/unknown.
+- `src/services/uploader.py` — `UploaderService`: sends video/audio/document, falls back to document for large/unknown. `_build_caption()` appends the source URL inside `<code>` (sent with `parse_mode="HTML"`) so it shows as non-linked text. `_prepare_thumbnail()` ffmpeg-resizes cover art to Telegram's thumbnail limits (≤320px, <200KB); failure is non-fatal.
 - `src/services/cleanup.py` — removes per-task temp dirs.
 - `src/utils/sanitizer.py` — filename sanitization / path-traversal prevention.
 
