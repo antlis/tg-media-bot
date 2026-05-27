@@ -34,6 +34,9 @@ class Settings:
     # Local Bot API Server (for uploads >50MB)
     api_server_url: str = ""
 
+    # Access control: empty set = open to everyone
+    allowed_users: set[int] = field(default_factory=set)
+
     # yt-dlp options
     use_browser_cookies: bool = True
     browser_name: str = "firefox"
@@ -63,12 +66,23 @@ def get_settings() -> Settings:
     return _settings
 
 
+def _parse_user_ids(raw: str) -> set[int]:
+    """Parse a comma-separated list of Telegram user IDs into a set of ints."""
+    ids: set[int] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part:
+            ids.add(int(part))
+    return ids
+
+
 def _load_settings() -> Settings:
     """Load settings from environment variables."""
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
         temp_dir=Path(os.getenv("TEMP_DIR", "/tmp/tg-media-bot")),
         api_server_url=os.getenv("API_SERVER_URL", ""),
+        allowed_users=_parse_user_ids(os.getenv("ALLOWED_USERS", "")),
         max_parallel_downloads=int(os.getenv("MAX_PARALLEL_DOWNLOADS", "3")),
         download_timeout=int(os.getenv("DOWNLOAD_TIMEOUT", "3600")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),

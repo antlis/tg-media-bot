@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.exceptions import TelegramAPIError
 
 from src.config import get_settings
@@ -79,7 +80,8 @@ async def main():
     # Create bot (use local API server if configured)
     if settings.api_server_url:
         logger.info(f"Using Local Bot API Server: {settings.api_server_url}")
-        session = AiohttpSession(api=settings.api_server_url)
+        api_server = TelegramAPIServer.from_base(settings.api_server_url)
+        session = AiohttpSession(api=api_server)
         bot = Bot(token=settings.bot_token, session=session)
     else:
         logger.info("Using standard Telegram Bot API (50MB upload limit)")
