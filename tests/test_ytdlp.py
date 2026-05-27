@@ -69,6 +69,17 @@ class TestBuildCommand:
         assert "--cookies-from-browser" not in cmd
 
 
+class TestEffectiveFormat:
+    def test_soundcloud_forced_to_audio(self, dl):
+        assert dl._effective_format("soundcloud", MediaFormat.AUTO) == MediaFormat.AUDIO
+        assert dl._effective_format("soundcloud", MediaFormat.VIDEO) == MediaFormat.AUDIO
+
+    def test_youtube_respects_preference(self, dl):
+        assert dl._effective_format("youtube", MediaFormat.AUTO) == MediaFormat.AUTO
+        assert dl._effective_format("youtube", MediaFormat.VIDEO) == MediaFormat.VIDEO
+        assert dl._effective_format("youtube", MediaFormat.AUDIO) == MediaFormat.AUDIO
+
+
 class TestFileDiscovery:
     def test_find_downloaded_file_picks_largest_media(self, dl, tmp_path):
         (tmp_path / "small.mp3").write_bytes(b"x" * 10)

@@ -182,6 +182,9 @@ class UploaderService:
             logger.error(f"File not found: {file_path}")
             return None
 
+        # One shareable message: the cover rides along as the audio's album-art
+        # thumbnail (Telegram forbids combining a standalone photo with an audio
+        # file in a single post/album), plus the title + source-URL caption.
         thumb = await _prepare_thumbnail(thumbnail_path) if thumbnail_path else None
 
         try:

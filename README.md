@@ -13,7 +13,8 @@ This bot downloads media from 1000+ platforms using yt-dlp and uploads the files
 - Per-user rate limiting
 - Automatic temporary file cleanup
 - Uploads up to 2GB via a bundled local Telegram Bot API server (vs. 50MB on the standard API)
-- Audio downloads include embedded + attached cover art and title/artist/duration metadata
+- Audio-only sources (e.g. SoundCloud) are auto-detected and always fetched as tagged MP3
+- Audio results are a single post: MP3 with embedded cover art, album-art thumbnail, and title/artist/duration
 - Each result post shows the original source URL as plain (non-linked) text
 - Firefox cookie support for authenticated downloads (non-Docker only)
 - Unit-tested with pytest
@@ -152,7 +153,8 @@ Notes:
 - `/audio` and `/video` set a **per-user** preference that persists until changed.
 - A download is queued per URL; `/status` reports each one's task ID, which `/cancel` consumes.
 - Per-user concurrency is bounded by `RATE_LIMIT_PER_USER`; the global cap is `MAX_PARALLEL_DOWNLOADS`.
-- **Audio posts** carry cover art (embedded in the MP3 and attached as the Telegram thumbnail) plus title, artist, and duration.
+- **Audio posts** are a single message: the MP3 with embedded cover art, an album-art thumbnail in the player, title/artist/duration tags, and the source URL in the caption. (Telegram doesn't allow a standalone photo and an audio file in one post, so the cover rides along as the player thumbnail.)
+- **SoundCloud links are always audio** — no need to send `/audio` first.
 - **Every post** includes the original source URL as monospace, non-linked text — copyable, but Telegram won't turn it into a link or fetch a preview.
 
 See [Command Reference](COMMANDS.md) for full examples and sample responses.

@@ -42,9 +42,9 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 - `src/bot/handlers.py` — `BotHandlers`: URL extraction, queueing, the background download→upload→cleanup task, status-message editing.
 - `src/commands/handlers.py` — `CommandHandlers`: `/start /help /audio /video /cancel /status /formats`.
 - `src/config/settings.py` — `Settings` dataclass loaded once from env (`get_settings()` singleton). All config flows through here.
-- `src/downloaders/ytdlp.py` — `YtDlpDownloader`: subprocess wrapper around `yt-dlp`. Platform detection, format selection. Audio downloads also embed cover art + tags (`--embed-thumbnail/--embed-metadata`) and write `--write-info-json`; `_find_thumbnail()` / `_read_info_json()` surface cover art, title, artist, and duration on `DownloadResult`.
+- `src/downloaders/ytdlp.py` — `YtDlpDownloader`: subprocess wrapper around `yt-dlp`. Platform detection, format selection. `AUDIO_ONLY_PLATFORMS` (e.g. soundcloud) are forced to audio via `_effective_format()` regardless of the user's preference. Audio downloads embed cover art + tags (`--embed-thumbnail/--embed-metadata`) and write `--write-info-json`; `_find_thumbnail()` / `_read_info_json()` surface cover art, title, artist, and duration on `DownloadResult`.
 - `src/queue/manager.py` — async queue + per-user concurrency limits.
-- `src/services/uploader.py` — `UploaderService`: sends video/audio/document, falls back to document for large/unknown. `_build_caption()` appends the source URL inside `<code>` (sent with `parse_mode="HTML"`) so it shows as non-linked text. `_prepare_thumbnail()` ffmpeg-resizes cover art to Telegram's thumbnail limits (≤320px, <200KB); failure is non-fatal.
+- `src/services/uploader.py` — `UploaderService`: sends video/audio/document, falls back to document for large/unknown. Audio is a **single** message — Telegram forbids combining a standalone photo with an audio file in one post/album, so the cover rides along as the audio's album-art thumbnail. `_build_caption()` appends the source URL inside `<code>` (sent with `parse_mode="HTML"`) so it shows as non-linked text. `_prepare_thumbnail()` ffmpeg-resizes cover art to Telegram's thumbnail limits (≤320px, <200KB); failure is non-fatal.
 - `src/services/cleanup.py` — removes per-task temp dirs.
 - `src/utils/sanitizer.py` — filename sanitization / path-traversal prevention.
 

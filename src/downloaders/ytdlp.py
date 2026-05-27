@@ -56,6 +56,10 @@ class YtDlpDownloader:
         "twitch": r"twitch\.tv",
     }
 
+    # Platforms that only ever serve audio — always download as audio so the
+    # result is a proper tagged MP3 with cover art, even without /audio mode.
+    AUDIO_ONLY_PLATFORMS = {"soundcloud"}
+
     def __init__(self):
         self.settings = get_settings()
         self._check_yt_dlp()
@@ -193,10 +197,11 @@ class YtDlpDownloader:
             return DownloadResult(success=False, error="Invalid URL")
 
         platform = self.detect_platform(url)
+        effective_format = self._effective_format(platform, preferred_format)
         logger.info(f"Starting download", platform=platform, url=url[:80])
 
         # Build yt-dlp command
-        cmd = self._build_command(url, output_dir, preferred_format)
+        cmd = self._build_command(url, output_dir, effective_format)
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -265,6 +270,17 @@ class YtDlpDownloader:
                 error=str(e)[:200],
                 platform=platform,
             )
+
+    def _effective_format(self, platform: str, preferred: MediaFormat) -> MediaFormat:
+        """Resolve the format to actually download.
+
+        Audio-only platforms (e.g. SoundCloud) are always fetched as audio so
+        the result is a tagged MP3 with cover art, regardless of the user's
+        video/auto preference.
+        """
+        if platform in self.AUDIO_ONLY_PLATFORMS:
+            return MediaFormat.AUDIO
+        return preferred
 
     def _build_command(
         self,
