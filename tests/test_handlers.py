@@ -1,16 +1,29 @@
-"""Tests for URL extraction in the message handler."""
+"""Tests for URL extraction and shared handler state."""
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from src.bot.handlers import BotHandlers
+from src.bot.handlers import BotHandlers, get_handlers
+from src.types.download import MediaFormat
 
 
 @pytest.fixture
 def handlers():
     # Bot is only used by the uploader, not by extract_urls
     return BotHandlers(bot=MagicMock())
+
+
+class TestGetHandlersSingleton:
+    def test_returns_same_instance(self):
+        bot = MagicMock()
+        assert get_handlers(bot) is get_handlers(bot)
+
+    def test_format_preference_persists_across_calls(self):
+        # /audio sets the preference on one retrieval...
+        get_handlers(MagicMock()).get_user_state(42).preferred_format = MediaFormat.AUDIO
+        # ...and the next message (a fresh get_handlers call) must still see it
+        assert get_handlers(MagicMock()).get_user_state(42).preferred_format == MediaFormat.AUDIO
 
 
 class TestExtractUrls:

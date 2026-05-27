@@ -70,7 +70,7 @@ Send me any media URL and I'll download and send it back to you.
 
     async def cmd_audio(self, message: types.Message):
         """Handle /audio command - set audio-only mode."""
-        from .handlers import get_handlers, DownloadState
+        from ..bot.handlers import get_handlers, DownloadState
 
         user_id = message.from_user.id
         handlers = get_handlers(self.bot)
@@ -81,7 +81,7 @@ Send me any media URL and I'll download and send it back to you.
 
     async def cmd_video(self, message: types.Message):
         """Handle /video command - set video mode."""
-        from .handlers import get_handlers
+        from ..bot.handlers import get_handlers
 
         user_id = message.from_user.id
         handlers = get_handlers(self.bot)
@@ -122,7 +122,7 @@ Send me any media URL and I'll download and send it back to you.
 
     async def cmd_formats(self, message: types.Message):
         """Handle /formats command."""
-        from .handlers import get_handlers
+        from ..bot.handlers import get_handlers
 
         # Get URL from message text
         parts = message.text.split(maxsplit=1)

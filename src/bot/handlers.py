@@ -283,6 +283,18 @@ class BotHandlers:
         )
 
 
+_handlers: Optional["BotHandlers"] = None
+
+
 def get_handlers(bot: Bot) -> BotHandlers:
-    """Factory to create handlers instance."""
-    return BotHandlers(bot)
+    """Return the shared handlers instance.
+
+    Must be a singleton: per-user state (e.g. the /audio vs /video format
+    preference in ``_user_states``) has to survive across messages. Creating a
+    new instance per message would reset every preference before the next
+    message arrives.
+    """
+    global _handlers
+    if _handlers is None:
+        _handlers = BotHandlers(bot)
+    return _handlers

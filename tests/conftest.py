@@ -19,6 +19,15 @@ def _no_ytdlp_check(monkeypatch):
     monkeypatch.setattr(ytdlp.YtDlpDownloader, "_check_yt_dlp", lambda self: None)
 
 
+@pytest.fixture(autouse=True)
+def _reset_handlers_singleton():
+    """Clear the shared BotHandlers between tests for isolation."""
+    from src.bot import handlers
+    handlers._handlers = None
+    yield
+    handlers._handlers = None
+
+
 @pytest.fixture
 def reload_settings():
     """Return a callable that reloads Settings from the current environment."""

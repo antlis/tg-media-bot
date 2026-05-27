@@ -19,6 +19,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.exceptions import TelegramAPIError
+from aiogram.types import BotCommand
 
 from src.config import get_settings
 from src.utils.logger import setup_logging, get_logger
@@ -91,6 +92,21 @@ async def main():
 
     # Create dispatcher
     dp = create_router(bot)
+
+    # Register commands so they show up in Telegram's autocomplete menu
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Start the bot"),
+            BotCommand(command="help", description="Show help and supported platforms"),
+            BotCommand(command="audio", description="Audio-only mode (MP3)"),
+            BotCommand(command="video", description="Video mode (default)"),
+            BotCommand(command="formats", description="List formats for a URL"),
+            BotCommand(command="status", description="Show your active downloads"),
+            BotCommand(command="cancel", description="Cancel a download by task ID"),
+        ])
+        logger.info("Bot commands registered")
+    except Exception as e:
+        logger.error(f"Could not register bot commands: {e}")
 
     # Setup shutdown handlers
     loop = asyncio.get_event_loop()
