@@ -11,7 +11,9 @@ services:
       - "8082:8081"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8081/"]
+      # The bot API server returns 404 on "/" (no root route), which fails an
+      # HTTP spider check — so probe that the port is accepting connections.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8081"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,8 +25,10 @@ services:
     environment:
       API_SERVER_URL: http://telegram-bot-api:8081
       USE_BROWSER_COOKIES: "false"
+      LOG_FILE: /data/tg-media-bot.log
     volumes:
       - bot-downloads:/tmp/tg-media-bot
+      - bot-logs:/data
     depends_on:
       telegram-bot-api:
         condition: service_healthy
@@ -33,3 +37,4 @@ services:
 volumes:
   telegram-bot-api-data:
   bot-downloads:
+  bot-logs:

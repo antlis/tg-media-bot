@@ -4,8 +4,13 @@ import logging
 import sys
 from datetime import datetime
 from enum import Enum
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
+
+# Rotating file handler limits: keep a long but bounded history.
+_LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per file
+_LOG_FILE_BACKUPS = 10                  # ~110 MB of retained history total
 
 
 class LogLevel(str, Enum):
@@ -20,19 +25,43 @@ class LogLevel(str, Enum):
 class StructuredLogger:
     """Logger with structured output for better log parsing."""
 
-    def __init__(self, name: str, level: str = "INFO"):
+    def __init__(self, name: str, level: str = "INFO", log_file: str = ""):
         self.logger = logging.getLogger(name)
         self.logger.setLevel(getattr(logging, level.upper(), logging.INFO))
 
-        if not self.logger.handlers:
+        formatter = logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        # Add handlers idempotently. Handlers may already exist because modules
+        # call get_logger() at import time (stdout only) before main() re-runs
+        # setup_logging() with a log_file — so we add each handler if missing
+        # rather than guarding on "no handlers at all".
+        if not any(type(h) is logging.StreamHandler for h in self.logger.handlers):
             handler = logging.StreamHandler(sys.stdout)
             handler.setLevel(logging.DEBUG)
-            formatter = logging.Formatter(
-                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
+
+        # Optional persistent log file (survives container restarts when the
+        # path is on a mounted volume). Rotated to bound disk usage.
+        if log_file and not any(
+            isinstance(h, RotatingFileHandler) for h in self.logger.handlers
+        ):
+            try:
+                Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+                file_handler = RotatingFileHandler(
+                    log_file,
+                    maxBytes=_LOG_FILE_MAX_BYTES,
+                    backupCount=_LOG_FILE_BACKUPS,
+                    encoding="utf-8",
+                )
+                file_handler.setLevel(logging.DEBUG)
+                file_handler.setFormatter(formatter)
+                self.logger.addHandler(file_handler)
+            except OSError as e:
+                self.logger.error(f"Could not open log file {log_file}: {e}")
 
     def _log(
         self,
@@ -131,10 +160,10 @@ class StructuredLogger:
 _logger: Optional[StructuredLogger] = None
 
 
-def setup_logging(level: str = "INFO") -> StructuredLogger:
+def setup_logging(level: str = "INFO", log_file: str = "") -> StructuredLogger:
     """Setup and return the global logger."""
     global _logger
-    _logger = StructuredLogger("tg-media-bot", level)
+    _logger = StructuredLogger("tg-media-bot", level, log_file)
     return _logger
 
 

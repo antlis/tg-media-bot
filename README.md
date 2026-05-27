@@ -117,6 +117,7 @@ All settings are loaded from `.env` (see `src/config/settings.py`).
 | `RATE_LIMIT_PER_USER` | no | `2` | Concurrent downloads per user |
 | `DOWNLOAD_TIMEOUT` | no | `3600` | Per-download timeout in seconds |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
+| `LOG_FILE` | no | empty (`/data/...` in Docker) | Persist logs to a rotating file for a durable download record |
 | `USE_BROWSER_COOKIES` | no | `true` | Use browser cookies (forced off in Docker) |
 | `BROWSER_NAME` | no | `firefox` | Browser to read cookies from |
 
@@ -134,6 +135,20 @@ docker compose up -d bot   # no rebuild needed — .env is read on start
 ```
 
 To find a user's numeric ID, have them message [@userinfobot](https://t.me/userinfobot).
+
+## Logs & Download History
+
+By default the bot logs to stdout (`docker compose logs bot`), which resets when the container is recreated. Set `LOG_FILE` to also persist logs to a rotating file. In Docker this is wired by default to `/data/tg-media-bot.log` on the named `bot-logs` volume, so the record of every download (timestamp, user ID, URL, platform, filename, size) **survives restarts and rebuilds**.
+
+```bash
+# Tail the persistent log
+docker compose exec bot tail -f /data/tg-media-bot.log
+
+# Just the completed downloads
+docker compose exec bot grep "Download completed" /data/tg-media-bot.log
+```
+
+Rotation keeps ~110 MB of history (10 × 10 MB files). For a privacy-minded setup, set `LOG_LEVEL=WARNING` to stop recording URLs/user IDs.
 
 ## Bot Commands
 

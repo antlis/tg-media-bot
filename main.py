@@ -65,8 +65,10 @@ async def main():
         sys.exit(1)
 
     # Setup logging
-    logger = setup_logging(settings.log_level)
+    logger = setup_logging(settings.log_level, settings.log_file)
     logger.info("Starting tg-media-bot")
+    if settings.log_file:
+        logger.info(f"Persisting logs to: {settings.log_file}")
     logger.info(f"Temp directory: {settings.temp_dir}")
     logger.info(f"Max parallel downloads: {settings.max_parallel_downloads}")
 

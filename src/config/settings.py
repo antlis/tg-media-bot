@@ -27,6 +27,9 @@ class Settings:
 
     # Logging
     log_level: str = "INFO"
+    # Optional path to persist logs to a file (in addition to stdout). When set,
+    # a rotating file handler keeps a durable record of downloads across restarts.
+    log_file: str = ""
 
     # Rate limiting
     rate_limit_per_user: int = 2  # concurrent downloads per user
@@ -86,6 +89,7 @@ def _load_settings() -> Settings:
         max_parallel_downloads=int(os.getenv("MAX_PARALLEL_DOWNLOADS", "3")),
         download_timeout=int(os.getenv("DOWNLOAD_TIMEOUT", "3600")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        log_file=os.getenv("LOG_FILE", ""),
         rate_limit_per_user=int(os.getenv("RATE_LIMIT_PER_USER", "2")),
         use_browser_cookies=os.getenv("USE_BROWSER_COOKIES", "true").lower() == "true",
         browser_name=os.getenv("BROWSER_NAME", "firefox"),
