@@ -56,6 +56,17 @@ class TestBuildCommand:
         assert "--merge-output-format" in cmd
         assert "mp4" in cmd
 
+    def test_video_recodes_for_inline_playback(self, dl, tmp_path):
+        # Direct .webm URLs etc. must be transcoded so Telegram plays them inline
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.VIDEO)
+        assert "--recode-video" in cmd
+        assert "ffmpeg:-movflags +faststart" in cmd
+
+    def test_auto_recodes_for_inline_playback(self, dl, tmp_path):
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO)
+        assert "--recode-video" in cmd
+        assert "ffmpeg:-movflags +faststart" in cmd
+
     def test_cookies_added_when_enabled(self, dl, tmp_path):
         dl.settings.use_browser_cookies = True
         dl.settings.browser_name = "firefox"

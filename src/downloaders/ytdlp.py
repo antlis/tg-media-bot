@@ -320,12 +320,20 @@ class YtDlpDownloader:
             cmd.extend([
                 "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best",
                 "--merge-output-format", "mp4",
+                # Direct-file URLs (e.g. .webm on imageboards) bypass the format
+                # selector — yt-dlp downloads the raw file. Re-encode anything
+                # non-mp4 to H.264/AAC and put the moov atom up front so Telegram
+                # can play it inline instead of showing it as a downloadable file.
+                "--recode-video", "mp4",
+                "--postprocessor-args", "ffmpeg:-movflags +faststart",
             ])
         else:
             # Auto - prefer video with audio, more flexible with fallbacks
             cmd.extend([
                 "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best",
                 "--merge-output-format", "mp4",
+                "--recode-video", "mp4",
+                "--postprocessor-args", "ffmpeg:-movflags +faststart",
             ])
 
         # Post-processing for thumbnails

@@ -14,6 +14,7 @@ This bot downloads media from 1000+ platforms using yt-dlp and uploads the files
 - Automatic temporary file cleanup
 - Uploads up to 2GB via a bundled local Telegram Bot API server (vs. 50MB on the standard API)
 - Audio-only sources (e.g. SoundCloud) are auto-detected and always fetched as tagged MP3
+- Direct media URLs (e.g. an imageboard `.webm`) are transcoded to a streamable MP4 (H.264/AAC, `moov` at the start) so Telegram plays them inline instead of attaching as a file
 - Audio results are a single post: MP3 with embedded cover art, album-art thumbnail, and title/artist/duration
 - Each result post shows the original source URL as plain (non-linked) text
 - Firefox cookie support for authenticated downloads (non-Docker only)
