@@ -44,6 +44,11 @@ class Settings:
     use_browser_cookies: bool = True
     browser_name: str = "firefox"
 
+    # Optional proxy for yt-dlp. Only used as a fallback when a download fails
+    # with a geo/region block (e.g. CIS-licensed media via a Russian exit).
+    # Format: socks5h://user:pass@host:port  (or http://...)
+    proxy_url: Optional[str] = None
+
     def __post_init__(self):
         """Validate and convert settings after initialization."""
         # Bot token is required
@@ -93,4 +98,5 @@ def _load_settings() -> Settings:
         rate_limit_per_user=int(os.getenv("RATE_LIMIT_PER_USER", "2")),
         use_browser_cookies=os.getenv("USE_BROWSER_COOKIES", "true").lower() == "true",
         browser_name=os.getenv("BROWSER_NAME", "firefox"),
+        proxy_url=os.getenv("PROXY_URL") or None,
     )

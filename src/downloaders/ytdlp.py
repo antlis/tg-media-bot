@@ -200,9 +200,45 @@ class YtDlpDownloader:
         effective_format = self._effective_format(platform, preferred_format)
         logger.info(f"Starting download", platform=platform, url=url[:80])
 
-        # Build yt-dlp command
+        # Build and run; on a geo-restriction failure, retry once via the proxy.
         cmd = self._build_command(url, output_dir, effective_format)
+        result = await self._run_download(cmd, output_dir, platform)
 
+        if (
+            not result.success
+            and self.settings.proxy_url
+            and self._is_geo_blocked(result.error)
+        ):
+            logger.info(
+                "Geo-restriction detected — retrying via proxy", platform=platform
+            )
+            cmd = self._build_command(
+                url, output_dir, effective_format, proxy=self.settings.proxy_url
+            )
+            result = await self._run_download(cmd, output_dir, platform)
+
+        return result
+
+    # Substrings in yt-dlp stderr that indicate a country/region licensing block.
+    _GEO_MARKERS = (
+        "geo restriction",
+        "geo-restricted",
+        "not available from your location",
+        "not available in your country",
+        "available in your country",
+        "in your region",
+        "blocked it in your country",
+    )
+
+    def _is_geo_blocked(self, error: str) -> bool:
+        """True if the failure looks like a country/region licensing block."""
+        e = (error or "").lower()
+        return any(m in e for m in self._GEO_MARKERS)
+
+    async def _run_download(
+        self, cmd: List[str], output_dir: Path, platform: str
+    ) -> DownloadResult:
+        """Run a single yt-dlp invocation and parse the result."""
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -287,9 +323,14 @@ class YtDlpDownloader:
         url: str,
         output_dir: Path,
         preferred_format: MediaFormat,
+        proxy: Optional[str] = None,
     ) -> List[str]:
         """Build yt-dlp command with appropriate options."""
         cmd = ["yt-dlp", "--no-playlist"]
+
+        # Route through a proxy (used only for the geo-restriction fallback retry)
+        if proxy:
+            cmd.extend(["--proxy", proxy])
 
         # Cookie authentication
         if self.settings.use_browser_cookies:
