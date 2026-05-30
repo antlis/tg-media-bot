@@ -25,6 +25,7 @@ def bot():
     b = MagicMock()
     b.send_photo = AsyncMock(return_value=MagicMock(message_id=1))
     b.send_audio = AsyncMock(return_value=MagicMock(message_id=2))
+    b.send_video = AsyncMock(return_value=MagicMock(message_id=3))
     return b
 
 
@@ -67,3 +68,35 @@ class TestUploadAudioCover:
         audio_kwargs = bot.send_audio.await_args.kwargs
         assert "<code>https://x.com/y</code>" in audio_kwargs["caption"]
         assert audio_kwargs["thumbnail"] is None
+
+
+class TestUploadVideoThumbnail:
+    @requires_ffmpeg
+    async def test_video_sent_with_thumbnail_and_caption(self, bot, tmp_path):
+        mp4 = tmp_path / "clip.mp4"
+        mp4.write_bytes(b"x" * 100)
+        poster = tmp_path / "poster.jpg"
+        _make_jpg(poster, "1280x720")
+
+        up = UploaderService(bot)
+        await up.upload_video(
+            chat_id=7, file_path=mp4, caption="Clip",
+            source_url="https://youtu.be/abc", duration=120, thumbnail_path=poster,
+        )
+
+        bot.send_video.assert_awaited_once()
+        kwargs = bot.send_video.await_args.kwargs
+        assert kwargs["thumbnail"] is not None
+        assert kwargs["duration"] == 120
+        assert "<code>https://youtu.be/abc</code>" in kwargs["caption"]
+
+    async def test_video_without_thumbnail(self, bot, tmp_path):
+        mp4 = tmp_path / "clip.mp4"
+        mp4.write_bytes(b"x" * 100)
+
+        up = UploaderService(bot)
+        await up.upload_video(chat_id=7, file_path=mp4, caption="Clip",
+                              source_url="https://youtu.be/abc", thumbnail_path=None)
+
+        bot.send_video.assert_awaited_once()
+        assert bot.send_video.await_args.kwargs["thumbnail"] is None

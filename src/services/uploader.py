@@ -97,6 +97,8 @@ class UploaderService:
         file_path: Path,
         caption: str = "",
         source_url: Optional[str] = None,
+        duration: float = 0.0,
+        thumbnail_path: Optional[Path] = None,
         reply_to_message_id: Optional[int] = None,
         supports_streaming: bool = True,
     ) -> Optional[Message]:
@@ -108,6 +110,8 @@ class UploaderService:
             file_path: Path to video file
             caption: Optional caption (title text)
             source_url: Original media URL, shown as plain text in the caption
+            duration: Video length in seconds (shown by Telegram)
+            thumbnail_path: Optional poster image shown before playback
             reply_to_message_id: Optional message to reply to
             supports_streaming: Enable streaming for large videos
 
@@ -118,6 +122,8 @@ class UploaderService:
             logger.error(f"File not found: {file_path}")
             return None
 
+        thumb = await _prepare_thumbnail(thumbnail_path) if thumbnail_path else None
+
         try:
             input_file = InputFile(file_path)
 
@@ -126,6 +132,8 @@ class UploaderService:
                 video=input_file,
                 caption=_build_caption(caption, source_url),
                 parse_mode="HTML",
+                duration=int(duration) if duration else None,
+                thumbnail=InputFile(thumb) if thumb else None,
                 reply_to_message_id=reply_to_message_id,
                 supports_streaming=supports_streaming,
             )
@@ -321,6 +329,8 @@ class UploaderService:
                 file_path=file_path,
                 caption=title,
                 source_url=source_url,
+                duration=duration,
+                thumbnail_path=thumbnail_path,
                 reply_to_message_id=reply_to_message_id,
             )
 
