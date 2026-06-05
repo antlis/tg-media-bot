@@ -1,12 +1,18 @@
 services:
   telegram-bot-api:
+    # NOTE: the daemon runs as uid 101 and creates 750 dirs; host access for
+    # tg-mpv-bot comes from default ACLs on ~/telegram-bot-api-data (see that
+    # repo's README) — the entrypoint must stay root, user: breaks it.
     image: aiogram/telegram-bot-api:latest
     environment:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID}
       TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
       TELEGRAM_LOCAL: "true"
     volumes:
-      - telegram-bot-api-data:/var/lib/telegram-bot-api
+      # Host bind (not a named volume): in TELEGRAM_LOCAL mode the server
+      # returns filesystem paths, and tg-mpv-bot (running on the host) reads
+      # downloaded files straight from this directory.
+      - ~/telegram-bot-api-data:/var/lib/telegram-bot-api
     ports:
       - "8082:8081"
     restart: unless-stopped
@@ -25,16 +31,23 @@ services:
     environment:
       API_SERVER_URL: http://telegram-bot-api:8081
       USE_BROWSER_COOKIES: "false"
+      # Netscape-format cookies for authenticated downloads (Instagram etc.).
+      # Drop a cookies.txt into ./cookies/ on the host — picked up per-download,
+      # no restart needed. Mounted read-write because yt-dlp writes refreshed
+      # cookies back to the file after each run.
+      COOKIES_FILE: /cookies/cookies.txt
       LOG_FILE: /data/tg-media-bot.log
+      # Auto-allowed groups (bot added by an ALLOWED_USER) persist here
+      ALLOWED_CHATS_FILE: /data/allowed_chats.json
     volumes:
       - bot-downloads:/tmp/tg-media-bot
       - bot-logs:/data
+      - ./cookies:/cookies
     depends_on:
       telegram-bot-api:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  telegram-bot-api-data:
   bot-downloads:
   bot-logs:
