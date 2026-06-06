@@ -69,3 +69,37 @@ class TestStatus:
                                  output_path="/tmp/x.mp4", file_size=123)
         assert queue.stats.total_completed == 1
         assert queue.get_task_by_id(task.task_id).file_size == 123
+
+
+class TestSlots:
+    async def test_acquire_then_busy_then_release(self):
+        q = QueueManager(max_parallel=1, rate_limit_per_user=5)
+        assert q.slots_busy() is False
+        await q.acquire_slot()
+        assert q.slots_busy() is True
+        q.release_slot()
+        assert q.slots_busy() is False
+
+    async def test_acquire_blocks_until_release(self):
+        import asyncio
+        q = QueueManager(max_parallel=1, rate_limit_per_user=5)
+        await q.acquire_slot()
+        second = asyncio.create_task(q.acquire_slot())
+        await asyncio.sleep(0)  # let it run and block
+        assert not second.done()
+        q.release_slot()
+        await asyncio.wait_for(second, timeout=1)
+        assert second.done()
+
+
+class TestCleanup:
+    async def test_cleanup_safe_for_cancelled_task(self, queue):
+        # cancel_task removes the task from the user's list; cleanup must not
+        # then choke trying to remove it a second time.
+        from datetime import datetime, timedelta
+        task, _ = await queue.add_task(1, "https://a")
+        queue.cancel_task(task.task_id, 1)
+        # Backdate completion so it falls past the prune cutoff.
+        task.completed_at = datetime.now() - timedelta(hours=48)
+        queue.cleanup_completed_tasks(older_than_hours=24)  # must not raise
+        assert queue.get_task_by_id(task.task_id) is None

@@ -45,7 +45,7 @@ class Settings:
     browser_name: str = "firefox"
 
     # Optional proxy for yt-dlp. Only used as a fallback when a download fails
-    # with a geo/region block (e.g. CIS-licensed media via a Russian exit).
+    # with a geo/region block (e.g. media that's licensed only in some regions).
     # Format: socks5h://user:pass@host:port  (or http://...)
     proxy_url: Optional[str] = None
 
@@ -61,6 +61,15 @@ class Settings:
 
         # Normalize log level
         self.log_level = self.log_level.upper()
+
+    @property
+    def upload_limit_mb(self) -> int:
+        """Max upload size Telegram will accept, in MB.
+
+        The standard Bot API caps uploads at 50MB; a local Bot API server
+        (configured via ``api_server_url``) raises this to 2000MB.
+        """
+        return 2000 if self.api_server_url else 50
 
 
 _settings: Optional[Settings] = None

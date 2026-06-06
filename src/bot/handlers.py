@@ -2,13 +2,9 @@
 
 import asyncio
 import re
-import uuid
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.context import FSMContext
+from aiogram import Bot, types
 from aiogram.exceptions import TelegramAPIError
 
 from ..config import get_settings
@@ -43,6 +39,9 @@ class BotHandlers:
         self.downloader = YtDlpDownloader()
         self.uploader = UploaderService(bot)
         self._user_states: dict[int, DownloadState] = {}
+        # task_id -> the background asyncio.Task running the download, so /cancel
+        # can actually stop in-flight work (not just flip a status flag).
+        self._running_tasks: dict[str, asyncio.Task] = {}
 
     def get_user_state(self, user_id: int) -> DownloadState:
         """Get or create user state."""
@@ -102,10 +101,28 @@ class BotHandlers:
 
         logger.download_started(user_id, url, platform, task.task_id)
 
-        # Process download in background
-        asyncio.create_task(
+        # Process download in background; keep a handle so /cancel can stop it.
+        bg = asyncio.create_task(
             self._process_download_task(task, message.chat.id, status_msg.message_id)
         )
+        self._running_tasks[task.task_id] = bg
+        bg.add_done_callback(
+            lambda _t, tid=task.task_id: self._running_tasks.pop(tid, None)
+        )
+
+    def cancel_download(self, task_id: str, user_id: int) -> bool:
+        """Cancel a queued/running download.
+
+        Marks the task cancelled (ownership-checked by the queue) and, if it's
+        already running, cancels its background task so the yt-dlp subprocess is
+        killed instead of finishing and uploading anyway.
+        """
+        if not self.queue.cancel_task(task_id, user_id):
+            return False
+        bg = self._running_tasks.get(task_id)
+        if bg and not bg.done():
+            bg.cancel()
+        return True
 
     async def _process_download_task(self, task, chat_id: int, status_msg_id: int):
         """Background task to process a download."""
@@ -116,7 +133,21 @@ class BotHandlers:
         temp_dir = self.settings.temp_dir / task.task_id
         temp_dir.mkdir(parents=True, exist_ok=True)
 
+        slot_acquired = False
         try:
+            # Wait for a global download slot (enforces MAX_PARALLEL_DOWNLOADS).
+            if self.queue.slots_busy():
+                await self._update_status_message(
+                    chat_id, status_msg_id,
+                    f"⏳ Waiting for a free download slot...\nTask: `{task.task_id}`"
+                )
+            await self.queue.acquire_slot()
+            slot_acquired = True
+
+            # The user may have cancelled while we waited for a slot.
+            if task.status == DownloadStatus.CANCELLED:
+                return
+
             # Update status
             task.status = DownloadStatus.DOWNLOADING
             await self._update_status_message(
@@ -187,16 +218,16 @@ class BotHandlers:
                 )
             else:
                 size_mb = result.file_size / (1024 * 1024)
+                limit_mb = self.settings.upload_limit_mb
                 error_msg = (
                     f"❌ Upload failed.\n"
                     f"File: {result.output_path.name}\n"
                     f"Size: {size_mb:.1f}MB\n\n"
                 )
-                if size_mb > 50:
-                    error_msg += (
-                        "Telegram Bot API has a 50MB upload limit.\n"
-                        "Consider using a Local Bot API Server for larger files."
-                    )
+                if size_mb > limit_mb:
+                    error_msg += f"This exceeds the {limit_mb}MB upload limit.\n"
+                    if limit_mb == 50:
+                        error_msg += "Run the bundled Local Bot API Server to raise it to 2GB."
                 else:
                     error_msg += "Telegram rejected the file."
                 await self._update_status_message(
@@ -208,6 +239,19 @@ class BotHandlers:
                     DownloadStatus.FAILED,
                     error_message=f"Upload failed ({size_mb:.1f}MB)",
                 )
+
+        except asyncio.CancelledError:
+            # /cancel: the download subprocess is killed downstream. Report and
+            # re-raise so the cancellation isn't swallowed.
+            self.queue.update_task_status(task.task_id, DownloadStatus.CANCELLED)
+            try:
+                await self._update_status_message(
+                    chat_id, status_msg_id,
+                    f"🚫 Cancelled.\nTask: `{task.task_id}`"
+                )
+            except TelegramAPIError:
+                pass
+            raise
 
         except Exception as e:
             logger.error(f"Download task error: {e}", task_id=task.task_id)
@@ -225,7 +269,9 @@ class BotHandlers:
                 pass
 
         finally:
-            # Cleanup
+            # Release the global slot if we took one, then clean up temp files.
+            if slot_acquired:
+                self.queue.release_slot()
             success, count = self.cleanup.cleanup_task_dir(temp_dir)
             logger.cleanup_completed(task.task_id, success, count)
 
