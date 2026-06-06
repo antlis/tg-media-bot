@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>tg-media-bot — self-hosted Telegram media downloader</title>
+<meta name="description" content="A lightweight, self-hosted Telegram bot that downloads media from 1000+ platforms with yt-dlp and sends it back to you. Pure utility — no AI, no tracking." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📥</text></svg>" />
+<style>
+  :root {
+    --bg: #0c0f14;
+    --bg-soft: #121722;
+    --panel: #161c28;
+    --border: #232c3d;
+    --text: #e6ebf2;
+    --muted: #93a1b5;
+    --accent: #38bdf8;
+    --accent-2: #818cf8;
+    --green: #34d399;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  header {
+    position: relative;
+    padding: 96px 0 72px;
+    text-align: center;
+    background:
+      radial-gradient(900px 400px at 50% -10%, rgba(56,189,248,0.14), transparent 70%),
+      radial-gradient(700px 400px at 80% 0%, rgba(129,140,248,0.12), transparent 70%);
+    border-bottom: 1px solid var(--border);
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 13px; color: var(--muted);
+    border: 1px solid var(--border); background: var(--bg-soft);
+    padding: 6px 14px; border-radius: 999px; margin-bottom: 28px;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+  h1 {
+    font-size: clamp(38px, 7vw, 66px);
+    line-height: 1.04; margin: 0 0 18px; letter-spacing: -0.02em; font-weight: 800;
+    background: linear-gradient(180deg, #fff, #b9c4d4);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .tagline { font-size: clamp(17px, 2.4vw, 21px); color: var(--muted); max-width: 640px; margin: 0 auto 36px; }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 13px 24px; border-radius: 11px; font-weight: 600; font-size: 15px;
+    border: 1px solid transparent; transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-2px); }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #06121c; box-shadow: 0 10px 30px -10px rgba(56,189,248,0.6); }
+  .btn-ghost { background: var(--bg-soft); border-color: var(--border); color: var(--text); }
+
+  section { padding: 72px 0; border-bottom: 1px solid var(--border); }
+  h2 { font-size: clamp(26px, 4vw, 34px); margin: 0 0 12px; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); max-width: 620px; margin: 0 0 40px; }
+
+  /* Feature grid */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; transition: border-color .15s ease, transform .15s ease;
+  }
+  .card:hover { border-color: #2f3d54; transform: translateY(-3px); }
+  .card .ico { font-size: 24px; margin-bottom: 12px; display: block; }
+  .card h3 { margin: 0 0 6px; font-size: 16.5px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  /* Code blocks */
+  pre {
+    background: #0a0d13; border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; overflow-x: auto; font-family: var(--mono); font-size: 13.5px;
+    line-height: 1.7; color: #cdd6e4; margin: 0 0 18px;
+  }
+  pre .c { color: #6b7a90; }       /* comment */
+  pre .p { color: var(--accent); } /* prompt / command */
+  .note { color: var(--muted); font-size: 14px; }
+
+  /* Steps */
+  .steps { counter-reset: step; display: grid; gap: 22px; }
+  .step { display: grid; grid-template-columns: 40px 1fr; gap: 16px; align-items: start; }
+  .step .n {
+    counter-increment: step; width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center; font-family: var(--mono); font-weight: 700;
+    background: var(--bg-soft); border: 1px solid var(--border); color: var(--accent);
+  }
+  .step .n::before { content: counter(step); }
+  .step h3 { margin: 6px 0 8px; font-size: 17px; }
+
+  /* Commands table */
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  td code { font-family: var(--mono); color: var(--accent); background: var(--bg-soft); padding: 2px 7px; border-radius: 6px; font-size: 13px; }
+  td:last-child { color: var(--muted); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .chip { font-family: var(--mono); font-size: 13px; color: var(--text); background: var(--bg-soft); border: 1px solid var(--border); padding: 7px 13px; border-radius: 8px; }
+
+  footer { padding: 48px 0 64px; text-align: center; color: var(--muted); font-size: 14px; }
+  footer .links { display: flex; gap: 22px; justify-content: center; margin-bottom: 18px; flex-wrap: wrap; }
+
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr; }
+    section { padding: 56px 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <span class="badge"><span class="dot"></span> Self-hosted · open source · no tracking</span>
+    <h1>Send a link.<br />Get the file back.</h1>
+    <p class="tagline">A lightweight Telegram bot that downloads media from <strong>1000+ platforms</strong> with yt-dlp and uploads it straight back to your chat. Pure utility — no AI, no accounts, runs on your own box.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/antlis/tg-media-bot">★ View on GitHub</a>
+      <a class="btn btn-ghost" href="#quickstart">Quick start →</a>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="lead">Small, focused, and self-hosted. Everything runs in two containers on your hardware.</p>
+    <div class="grid">
+      <div class="card">
+        <span class="ico">🌐</span>
+        <h3>1000+ platforms</h3>
+        <p>YouTube, SoundCloud, TikTok, Instagram, Reddit, Twitch, Vimeo, X — anything yt-dlp supports.</p>
+      </div>
+      <div class="card">
+        <span class="ico">📦</span>
+        <h3>Uploads up to 2 GB</h3>
+        <p>Bundled local Telegram Bot API server lifts the 50 MB cap to 2 GB. One <code>docker compose up</code>.</p>
+      </div>
+      <div class="card">
+        <span class="ico">🎵</span>
+        <h3>Tagged MP3 audio</h3>
+        <p><code>/audio</code> mode returns a clean MP3 with embedded cover art, album-art thumbnail, and title/artist tags.</p>
+      </div>
+      <div class="card">
+        <span class="ico">🎬</span>
+        <h3>Inline-playable video</h3>
+        <p>Non-MP4 sources are transcoded to streamable H.264/AAC so Telegram plays them inline, not as a download.</p>
+      </div>
+      <div class="card">
+        <span class="ico">🔒</span>
+        <h3>Allowlist access</h3>
+        <p>Gate the bot to specific Telegram user IDs. Per-user rate limiting and a global concurrency cap built in.</p>
+      </div>
+      <div class="card">
+        <span class="ico">🧹</span>
+        <h3>Cleans up after itself</h3>
+        <p>Temp files are removed after every upload. Optional rotating log keeps a durable download history.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <h2>Quick start</h2>
+    <p class="lead">Docker Compose brings up the bot <em>and</em> the local Bot API server for 2 GB uploads.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="n"></div>
+        <div>
+          <h3>Get your Telegram credentials</h3>
+          <p class="note">A bot token from <a href="https://t.me/BotFather">@BotFather</a>, plus an API ID + hash from <a href="https://my.telegram.org/apps">my.telegram.org/apps</a> (needed by the local API server).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n"></div>
+        <div>
+          <h3>Configure</h3>
+<pre><span class="p">cp</span> .env.example .env
+<span class="c"># set BOT_TOKEN, TELEGRAM_API_ID, TELEGRAM_API_HASH, ALLOWED_USERS</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n"></div>
+        <div>
+          <h3>Run</h3>
+<pre><span class="p">docker</span> compose up -d --build
+<span class="p">docker</span> compose logs -f bot</pre>
+          <p class="note">Then message your bot a URL. That's it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="wrap">
+    <h2>Commands</h2>
+    <p class="lead">Send any media URL (up to 3 per message) and it downloads in your active mode.</p>
+    <table>
+      <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>/audio</code></td><td>Switch to audio-only — downloads become tagged MP3s</td></tr>
+        <tr><td><code>/video</code></td><td>Switch to video mode (default)</td></tr>
+        <tr><td><code>/formats &lt;url&gt;</code></td><td>List the available download formats for a URL</td></tr>
+        <tr><td><code>/status</code></td><td>Show your queued/active downloads and task IDs</td></tr>
+        <tr><td><code>/cancel &lt;id&gt;</code></td><td>Cancel an active download — actually stops it mid-flight</td></tr>
+        <tr><td><code>/help</code></td><td>Show help and the supported-platforms list</td></tr>
+      </tbody>
+    </table>
+    <div class="chips">
+      <span class="chip">Python 3.11+</span>
+      <span class="chip">aiogram 3.x</span>
+      <span class="chip">yt-dlp</span>
+      <span class="chip">ffmpeg</span>
+      <span class="chip">Docker</span>
+      <span class="chip">MIT licensed</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/antlis/tg-media-bot">GitHub</a>
+      <a href="https://github.com/antlis/tg-media-bot/blob/main/README.md">Docs</a>
+      <a href="https://github.com/antlis/tg-media-bot/blob/main/INSTALLATION.md">Install guide</a>
+      <a href="https://github.com/antlis/tg-media-bot/issues">Issues</a>
+    </div>
+    <p>Built with yt-dlp &amp; aiogram · MIT licensed · © 2026 antlis</p>
+  </div>
+</footer>
+
+</body>
+</html>
