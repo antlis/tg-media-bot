@@ -17,6 +17,10 @@ from ..utils.sanitizer import sanitize_filename
 
 logger = get_logger()
 
+# Per-connection network stall timeout (seconds). Distinct from the total
+# DOWNLOAD_TIMEOUT, which bounds the whole yt-dlp run.
+_SOCKET_TIMEOUT = 60
+
 
 @dataclass
 class DownloadResult:
@@ -118,13 +122,16 @@ class YtDlpDownloader:
 
         cmd.append(url)
 
+        result = None
         try:
             result = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await result.communicate()
+            stdout, stderr = await asyncio.wait_for(
+                result.communicate(), timeout=self.settings.download_timeout
+            )
 
             if result.returncode != 0:
                 logger.debug(f"get_info failed: {stderr.decode()[:200]}")
@@ -132,6 +139,10 @@ class YtDlpDownloader:
 
             return json.loads(stdout.decode())
 
+        except asyncio.TimeoutError:
+            await self._terminate(result)
+            logger.debug("get_info timed out")
+            return None
         except (asyncio.SubprocessError, json.JSONDecodeError) as e:
             logger.debug(f"get_info error: {e}")
             return None
@@ -235,10 +246,25 @@ class YtDlpDownloader:
         e = (error or "").lower()
         return any(m in e for m in self._GEO_MARKERS)
 
+    @staticmethod
+    async def _terminate(process) -> None:
+        """Kill a still-running subprocess and reap it (best effort)."""
+        if process and process.returncode is None:
+            try:
+                process.kill()
+                await process.wait()
+            except ProcessLookupError:
+                pass
+
     async def _run_download(
         self, cmd: List[str], output_dir: Path, platform: str
     ) -> DownloadResult:
-        """Run a single yt-dlp invocation and parse the result."""
+        """Run a single yt-dlp invocation and parse the result.
+
+        Bounded by ``DOWNLOAD_TIMEOUT``; on timeout or cancellation the child
+        process is killed so it can't keep downloading in the background.
+        """
+        process = None
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -246,7 +272,21 @@ class YtDlpDownloader:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=self.settings.download_timeout,
+                )
+            except asyncio.TimeoutError:
+                await self._terminate(process)
+                logger.error(
+                    f"Download timed out after {self.settings.download_timeout}s"
+                )
+                return DownloadResult(
+                    success=False,
+                    error=f"Download timed out after {self.settings.download_timeout}s",
+                    platform=platform,
+                )
 
             if process.returncode != 0:
                 error_msg = stderr.decode(errors="replace").strip()
@@ -293,14 +333,13 @@ class YtDlpDownloader:
                 platform=platform,
             )
 
-        except asyncio.TimeoutError:
-            return DownloadResult(
-                success=False,
-                error="Download timed out",
-                platform=platform,
-            )
+        except asyncio.CancelledError:
+            # User cancelled (/cancel) — stop the child process, then propagate.
+            await self._terminate(process)
+            raise
         except Exception as e:
             logger.error(f"Download exception: {e}")
+            await self._terminate(process)
             return DownloadResult(
                 success=False,
                 error=str(e)[:200],
@@ -356,20 +395,13 @@ class YtDlpDownloader:
                 # a second network call (used to set the Telegram audio fields)
                 "--write-info-json",
             ])
-        elif preferred_format == MediaFormat.VIDEO:
-            # Best video + audio, merge if needed - with fallback to format 18
-            cmd.extend([
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best",
-                "--merge-output-format", "mp4",
-                # Direct-file URLs (e.g. .webm on imageboards) bypass the format
-                # selector — yt-dlp downloads the raw file. Re-encode anything
-                # non-mp4 to H.264/AAC and put the moov atom up front so Telegram
-                # can play it inline instead of showing it as a downloadable file.
-                "--recode-video", "mp4",
-                "--postprocessor-args", "ffmpeg:-movflags +faststart",
-            ])
         else:
-            # Auto - prefer video with audio, more flexible with fallbacks
+            # VIDEO and AUTO behave identically: best video+audio, merged to mp4,
+            # with a fallback to format 18. Direct-file URLs (e.g. .webm on
+            # imageboards) bypass the format selector — yt-dlp downloads the raw
+            # file — so re-encode anything non-mp4 to H.264/AAC and put the moov
+            # atom up front, letting Telegram play it inline rather than as a
+            # downloadable file.
             cmd.extend([
                 "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best",
                 "--merge-output-format", "mp4",
@@ -383,9 +415,9 @@ class YtDlpDownloader:
             "--convert-thumbnails", "jpg",
         ])
 
-        # Timeout
+        # Per-connection network stall timeout
         cmd.extend([
-            "--socket-timeout", "60",
+            "--socket-timeout", str(_SOCKET_TIMEOUT),
         ])
 
         # Don't overwrite

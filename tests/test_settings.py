@@ -42,6 +42,15 @@ class TestSettings:
         s = Settings(bot_token="x", temp_dir=tmp_path)
         assert s.allowed_users == set()
 
+    def test_upload_limit_standard_api(self, tmp_path):
+        s = Settings(bot_token="x", temp_dir=tmp_path)
+        assert s.upload_limit_mb == 50
+
+    def test_upload_limit_local_api(self, tmp_path):
+        s = Settings(bot_token="x", temp_dir=tmp_path,
+                     api_server_url="http://telegram-bot-api:8081")
+        assert s.upload_limit_mb == 2000
+
 
 class TestLoadSettings:
     def test_allowed_users_loaded_from_env(self, monkeypatch, tmp_path, reload_settings):

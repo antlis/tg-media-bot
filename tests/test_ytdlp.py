@@ -134,6 +134,41 @@ class TestFormatsList:
         assert "18" in out and "mp4" in out and "6.2MB" in out
 
 
+class TestDownloadTimeout:
+    async def test_timeout_kills_process_and_fails(self, dl, tmp_path, monkeypatch):
+        import asyncio
+
+        dl.settings.download_timeout = 0.01
+
+        class FakeProc:
+            def __init__(self):
+                self.returncode = None
+                self.killed = False
+
+            async def communicate(self):
+                await asyncio.sleep(10)  # longer than the timeout
+                return b"", b""
+
+            def kill(self):
+                self.killed = True
+                self.returncode = -9
+
+            async def wait(self):
+                return self.returncode
+
+        proc = FakeProc()
+
+        async def fake_exec(*args, **kwargs):
+            return proc
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+
+        result = await dl._run_download(["yt-dlp", "x"], tmp_path, "youtube")
+        assert result.success is False
+        assert "timed out" in result.error.lower()
+        assert proc.killed is True
+
+
 class TestGetFormats:
     async def test_parses_info(self, dl, monkeypatch):
         async def fake_info(url):

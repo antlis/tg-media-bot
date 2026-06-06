@@ -8,7 +8,9 @@ services:
     volumes:
       - telegram-bot-api-data:/var/lib/telegram-bot-api
     ports:
-      - "8082:8081"
+      # Host port is configurable (8081 is often already taken); the bot reaches
+      # the server over the internal Compose network regardless of this mapping.
+      - "${BOT_API_HOST_PORT:-8082}:8081"
     restart: unless-stopped
     healthcheck:
       # The bot API server returns 404 on "/" (no root route), which fails an

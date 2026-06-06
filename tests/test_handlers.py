@@ -26,6 +26,30 @@ class TestGetHandlersSingleton:
         assert get_handlers(MagicMock()).get_user_state(42).preferred_format == MediaFormat.AUDIO
 
 
+class TestCancelDownload:
+    async def test_cancel_stops_running_task(self, handlers):
+        import asyncio
+
+        task, _ = await handlers.queue.add_task(user_id=7, url="https://a")
+
+        async def long_running():
+            await asyncio.sleep(30)
+
+        bg = asyncio.create_task(long_running())
+        handlers._running_tasks[task.task_id] = bg
+
+        assert handlers.cancel_download(task.task_id, user_id=7) is True
+        await asyncio.sleep(0)  # let the cancellation propagate
+        assert bg.cancelled()
+
+        from src.types.download import DownloadStatus
+        assert handlers.queue.get_task_by_id(task.task_id).status == DownloadStatus.CANCELLED
+
+    async def test_cancel_rejects_non_owner(self, handlers):
+        task, _ = await handlers.queue.add_task(user_id=7, url="https://a")
+        assert handlers.cancel_download(task.task_id, user_id=999) is False
+
+
 class TestExtractUrls:
     def test_single_url(self, handlers):
         assert handlers.extract_urls("https://youtube.com/watch?v=x") == [

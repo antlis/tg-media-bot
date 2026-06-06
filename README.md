@@ -121,6 +121,8 @@ All settings are loaded from `.env` (see `src/config/settings.py`).
 | `LOG_FILE` | no | empty (`/data/...` in Docker) | Persist logs to a rotating file for a durable download record |
 | `USE_BROWSER_COOKIES` | no | `true` | Use browser cookies (forced off in Docker) |
 | `BROWSER_NAME` | no | `firefox` | Browser to read cookies from |
+| `PROXY_URL` | no | empty | Proxy used **only** as a fallback retry when a download fails with a geo/region block (`socks5h://…` or `http://…`) |
+| `BOT_API_HOST_PORT` | no | `8082` | Docker only: host port for the local Bot API server |
 
 ## Access Control
 

@@ -44,12 +44,13 @@ class QueueManager:
 
         # Task storage
         self._tasks: Dict[str, DownloadTask] = {}
-        self._task_queue: asyncio.Queue[DownloadTask] = asyncio.Queue()
 
         # User tracking
         self._user_tasks: Dict[int, List[str]] = defaultdict(list)
 
-        # Semaphore for concurrent downloads
+        # Bounds the number of downloads running at once. Acquired by the
+        # download runner (see BotHandlers._process_download_task) and released
+        # when that run finishes, so MAX_PARALLEL_DOWNLOADS is actually enforced.
         self._semaphore = asyncio.Semaphore(max_parallel)
 
         # Stats
@@ -80,6 +81,9 @@ class QueueManager:
         Returns:
             Tuple of (task, error_message). task is None if rejected.
         """
+        # Opportunistically drop old terminal tasks so _tasks stays bounded.
+        self.cleanup_completed_tasks()
+
         # Check rate limit
         active_user_tasks = self.get_user_active_tasks(user_id)
         if len(active_user_tasks) >= self.rate_limit_per_user:
@@ -105,47 +109,28 @@ class QueueManager:
         self._user_tasks[user_id].append(task_id)
         self._stats.total_queued += 1
 
-        # Add to queue
-        await self._task_queue.put(task)
-
         logger.info(
             "Task queued",
             task_id=task_id,
             user_id=user_id,
-            queue_size=self._task_queue.qsize(),
         )
 
         return task, ""
 
-    async def get_task(self, timeout: Optional[float] = None) -> Optional[DownloadTask]:
+    def slots_busy(self) -> bool:
+        """True if all global download slots are currently in use."""
+        return self._semaphore.locked()
+
+    async def acquire_slot(self):
+        """Block until a global download slot is free, then take it.
+
+        The caller MUST pair this with exactly one release_slot() (e.g. in a
+        finally block) so the count stays balanced.
         """
-        Get the next task from the queue.
-
-        Acquires semaphore slot if available.
-        """
-        try:
-            task = await asyncio.wait_for(
-                self._task_queue.get(),
-                timeout=timeout,
-            )
-
-            # Try to acquire semaphore slot
-            if self._semaphore.locked():
-                # Re-queue and wait
-                await self._task_queue.put(task)
-                await asyncio.sleep(0.1)
-                return None
-
-            self._semaphore.acquire()
-            task.status = DownloadStatus.DOWNLOADING
-            task.started_at = datetime.now()
-            return task
-
-        except asyncio.TimeoutError:
-            return None
+        await self._semaphore.acquire()
 
     def release_slot(self):
-        """Release a semaphore slot after task completion."""
+        """Release a previously acquired download slot."""
         self._semaphore.release()
 
     def get_task_by_id(self, task_id: str) -> Optional[DownloadTask]:
@@ -216,7 +201,8 @@ class QueueManager:
 
         if status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED):
             task.completed_at = datetime.now()
-            self.release_slot()
+            # Note: the download slot is released by the runner that acquired it
+            # (BotHandlers._process_download_task), not here.
 
             if status == DownloadStatus.COMPLETED:
                 self._stats.total_completed += 1
@@ -266,7 +252,8 @@ class QueueManager:
 
         for task_id in to_remove:
             task = self._tasks.pop(task_id, None)
-            if task:
+            # cancel_task() may already have removed it from the user's list.
+            if task and task_id in self._user_tasks.get(task.user_id, []):
                 self._user_tasks[task.user_id].remove(task_id)
 
         if to_remove:

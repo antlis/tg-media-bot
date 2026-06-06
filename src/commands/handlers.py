@@ -103,7 +103,8 @@ Send me any media URL and I'll download and send it back to you.
             return
 
         task_id = args[0]
-        success = self.queue.cancel_task(task_id, user_id)
+        from ..bot.handlers import get_handlers
+        success = get_handlers(self.bot).cancel_download(task_id, user_id)
 
         if success:
             await message.answer(f"✅ Task {task_id} cancelled.")
