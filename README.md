@@ -79,9 +79,11 @@ Set at minimum `BOT_TOKEN`, `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `ALLOWED
 ### 3. Run
 
 ```bash
-docker compose up -d --build
+docker compose up -d         # pulls the prebuilt image from GHCR
 docker compose logs -f bot
 ```
+
+`docker-compose.yml` references the published image `ghcr.io/antlis/tg-media-bot:latest`, so no local build is needed. To build from source instead (e.g. for unreleased changes), use `docker compose up -d --build`.
 
 To stop: `docker compose down`.
 
@@ -107,6 +109,18 @@ python main.py
 ```
 
 See [Installation Guide](INSTALLATION.md) for systemd service setup and Firefox cookie configuration.
+
+## Install on Arch (AUR)
+
+Arch users can install a packaged build with a systemd service:
+
+```bash
+paru -S tg-media-bot          # or: yay -S tg-media-bot
+sudoedit /etc/tg-media-bot/.env   # set BOT_TOKEN, ALLOWED_USERS
+sudo systemctl enable --now tg-media-bot
+```
+
+Packaging files and publishing notes live in [`packaging/aur/`](packaging/aur/).
 
 ## Configuration
 
