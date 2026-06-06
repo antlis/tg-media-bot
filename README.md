@@ -17,7 +17,7 @@ This bot downloads media from 1000+ platforms using yt-dlp and uploads the files
 - Direct media URLs (e.g. an imageboard `.webm`) are transcoded to a streamable MP4 (H.264/AAC, `moov` at the start) so Telegram plays them inline instead of attaching as a file
 - Audio results are a single post: MP3 with embedded cover art, album-art thumbnail, and title/artist/duration
 - Each result post shows the original source URL as plain (non-linked) text
-- Firefox cookie support for authenticated downloads (non-Docker only)
+- Authenticated downloads via browser cookies (bare Python) or a mounted `cookies.txt` (Docker)
 - Unit-tested with pytest
 
 ## Project Structure
@@ -121,6 +121,8 @@ All settings are loaded from `.env` (see `src/config/settings.py`).
 | `LOG_FILE` | no | empty (`/data/...` in Docker) | Persist logs to a rotating file for a durable download record |
 | `USE_BROWSER_COOKIES` | no | `true` | Use browser cookies (forced off in Docker) |
 | `BROWSER_NAME` | no | `firefox` | Browser to read cookies from |
+| `COOKIES_FILE` | no | empty | Path to a Netscape `cookies.txt` for authenticated downloads; takes precedence over browser cookies when present (the Docker way to auth) |
+| `ALLOWED_CHATS_FILE` | no | empty | Path to a JSON file persisting group chats an allowed user has activated the bot in |
 | `PROXY_URL` | no | empty | Proxy used **only** as a fallback retry when a download fails with a geo/region block (`socks5h://…` or `http://…`) |
 | `BOT_API_HOST_PORT` | no | `8082` | Docker only: host port for the local Bot API server |
 
@@ -138,6 +140,17 @@ docker compose up -d bot   # no rebuild needed — .env is read on start
 ```
 
 To find a user's numeric ID, have them message [@userinfobot](https://t.me/userinfobot).
+
+### Use in groups
+
+The bot also works in group chats. When an allowed user uses it inside a group, that group is **activated** — its other members can then use the bot there too, without being individually allowlisted. Set `ALLOWED_CHATS_FILE` to persist activated groups across restarts (in Docker this defaults to `/data/allowed_chats.json` on the `bot-logs` volume); leave it unset to keep them in memory only.
+
+### Authenticated downloads (cookies)
+
+Some sources (Instagram, age-restricted videos, etc.) need a logged-in session. Two options:
+
+- **Bare Python:** set `USE_BROWSER_COOKIES=true` and `BROWSER_NAME` to pull cookies from your local browser.
+- **Docker:** export a Netscape `cookies.txt`, drop it in `./cookies/`, and it's used per-download (`COOKIES_FILE=/cookies/cookies.txt`, mounted by `docker-compose.yml`). A present `cookies.txt` takes precedence over browser cookies.
 
 ## Logs & Download History
 

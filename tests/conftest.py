@@ -28,6 +28,15 @@ def _reset_handlers_singleton():
     handlers._handlers = None
 
 
+@pytest.fixture(autouse=True)
+def _reset_chat_store_singleton():
+    """Clear the shared ChatStore between tests for isolation."""
+    from src.services import chat_store
+    chat_store._chat_store = None
+    yield
+    chat_store._chat_store = None
+
+
 @pytest.fixture
 def reload_settings():
     """Return a callable that reloads Settings from the current environment."""

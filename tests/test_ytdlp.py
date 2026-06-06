@@ -76,8 +76,27 @@ class TestBuildCommand:
 
     def test_cookies_absent_when_disabled(self, dl, tmp_path):
         dl.settings.use_browser_cookies = False
+        dl.settings.cookies_file = ""
         cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO)
         assert "--cookies-from-browser" not in cmd
+        assert "--cookies" not in cmd
+
+    def test_cookies_file_used_when_present(self, dl, tmp_path):
+        cookies = tmp_path / "cookies.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        dl.settings.cookies_file = str(cookies)
+        dl.settings.use_browser_cookies = True  # file still wins
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO)
+        assert "--cookies" in cmd
+        assert str(cookies) in cmd
+        assert "--cookies-from-browser" not in cmd
+
+    def test_missing_cookies_file_falls_back_to_browser(self, dl, tmp_path):
+        dl.settings.cookies_file = str(tmp_path / "does-not-exist.txt")
+        dl.settings.use_browser_cookies = True
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO)
+        assert "--cookies" not in cmd
+        assert "--cookies-from-browser" in cmd
 
 
 class TestEffectiveFormat:

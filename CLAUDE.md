@@ -48,7 +48,10 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 - `src/queue/manager.py` — async queue + per-user concurrency limits.
 - `src/services/uploader.py` — `UploaderService`: sends video/audio/document, falls back to document for large/unknown. Audio is a **single** message — Telegram forbids combining a standalone photo with an audio file in one post/album, so the cover rides along as the audio's album-art thumbnail. `_build_caption()` appends the source URL inside `<code>` (sent with `parse_mode="HTML"`) so it shows as non-linked text. `_prepare_thumbnail()` ffmpeg-resizes cover art to Telegram's thumbnail limits (≤320px, <200KB); failure is non-fatal.
 - `src/services/cleanup.py` — removes per-task temp dirs.
+- `src/services/chat_store.py` — `ChatStore`: persistent allowlist of group chats an allowed user has activated the bot in. Backed by `ALLOWED_CHATS_FILE` (JSON) when set, in-memory otherwise. Singleton via `get_chat_store()`.
 - `src/utils/sanitizer.py` — filename sanitization / path-traversal prevention.
+
+`YtDlpDownloader._cookie_args()` centralizes cookie flags: a `COOKIES_FILE` (when the file exists) wins over `--cookies-from-browser`; used by both `get_info()` and `_build_command()`.
 
 ## Conventions
 
@@ -70,3 +73,5 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 ## Access control
 
 `ALLOWED_USERS` (comma-separated Telegram user IDs) is enforced by `auth_middleware` in `src/bot/router.py`, gating every message before handlers. Empty allowlist = open to everyone. Read at startup, so adding an ID only needs a bot restart, not a rebuild.
+
+**Groups:** access is also granted in any group chat that an allowed user has used the bot in. The first time an allowed user sends a message in a group/supergroup, `auth_middleware` records the chat in the `ChatStore` (`src/services/chat_store.py`), after which the group's other members are served too. Activated chats persist to `ALLOWED_CHATS_FILE` when set.

@@ -81,6 +81,16 @@ class YtDlpDownloader:
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             raise RuntimeError(f"yt-dlp not found or not working: {e}")
 
+    def _cookie_args(self) -> List[str]:
+        """yt-dlp cookie flags. A cookies.txt (if present) wins over browser
+        cookies; in Docker the file is the only option (no browser)."""
+        cookies_file = self.settings.cookies_file
+        if cookies_file and Path(cookies_file).exists():
+            return ["--cookies", cookies_file]
+        if self.settings.use_browser_cookies:
+            return ["--cookies-from-browser", self.settings.browser_name]
+        return []
+
     def detect_platform(self, url: str) -> str:
         """Detect platform from URL."""
         for platform, pattern in self.PLATFORM_PATTERNS.items():
@@ -117,8 +127,7 @@ class YtDlpDownloader:
             "--no-playlist",
         ]
 
-        if self.settings.use_browser_cookies:
-            cmd.extend(["--cookies-from-browser", self.settings.browser_name])
+        cmd.extend(self._cookie_args())
 
         cmd.append(url)
 
@@ -372,8 +381,7 @@ class YtDlpDownloader:
             cmd.extend(["--proxy", proxy])
 
         # Cookie authentication
-        if self.settings.use_browser_cookies:
-            cmd.extend(["--cookies-from-browser", self.settings.browser_name])
+        cmd.extend(self._cookie_args())
 
         # Suppress version update warning
         cmd.append("--no-update")
