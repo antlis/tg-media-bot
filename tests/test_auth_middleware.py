@@ -7,7 +7,7 @@ import pytest
 from src.bot import router
 
 
-def _make_event():
+def _make_event(chat=None):
     """A minimal stand-in for an aiogram Message with from_user + answer()."""
     answers = []
 
@@ -16,14 +16,18 @@ def _make_event():
 
     return SimpleNamespace(
         from_user=SimpleNamespace(id=0),
+        chat=chat,
         answer=answer,
         _answers=answers,
     )
 
 
-def _patch_allowed(monkeypatch, allowed):
+def _patch_allowed(monkeypatch, allowed, store=None):
     monkeypatch.setattr(router, "get_settings",
                         lambda: SimpleNamespace(allowed_users=allowed))
+    if store is not None:
+        from src.services import chat_store
+        monkeypatch.setattr(chat_store, "get_chat_store", lambda: store)
 
 
 async def _run(event):
@@ -66,3 +70,44 @@ class TestAuthMiddleware:
         event.from_user = None
         hit, _ = await _run(event)
         assert hit is False
+
+
+class TestGroupAllowlist:
+    def _store(self):
+        from src.services.chat_store import ChatStore
+        return ChatStore("")  # in-memory, no file
+
+    async def test_allowed_user_in_group_activates_it(self, monkeypatch):
+        store = self._store()
+        _patch_allowed(monkeypatch, {42}, store)
+        event = _make_event(chat=SimpleNamespace(id=-100, type="supergroup"))
+        event.from_user.id = 42
+        hit, _ = await _run(event)
+        assert hit is True
+        assert store.contains(-100)  # remembered for other members
+
+    async def test_other_member_passes_in_activated_group(self, monkeypatch):
+        store = self._store()
+        store.add(-100)  # already activated by an allowed user
+        _patch_allowed(monkeypatch, {42}, store)
+        event = _make_event(chat=SimpleNamespace(id=-100, type="supergroup"))
+        event.from_user.id = 777  # not an allowed user
+        hit, _ = await _run(event)
+        assert hit is True
+
+    async def test_stranger_in_unknown_group_blocked(self, monkeypatch):
+        store = self._store()
+        _patch_allowed(monkeypatch, {42}, store)
+        event = _make_event(chat=SimpleNamespace(id=-555, type="supergroup"))
+        event.from_user.id = 777
+        hit, _ = await _run(event)
+        assert hit is False
+
+    async def test_private_chat_not_remembered(self, monkeypatch):
+        store = self._store()
+        _patch_allowed(monkeypatch, {42}, store)
+        event = _make_event(chat=SimpleNamespace(id=42, type="private"))
+        event.from_user.id = 42
+        hit, _ = await _run(event)
+        assert hit is True
+        assert not store.contains(42)  # private chats aren't allowlisted

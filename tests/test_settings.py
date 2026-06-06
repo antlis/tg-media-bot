@@ -66,3 +66,12 @@ class TestLoadSettings:
         monkeypatch.setenv("API_SERVER_URL", "http://telegram-bot-api:8081")
         s = reload_settings()
         assert s.api_server_url == "http://telegram-bot-api:8081"
+
+    def test_cookies_and_chats_files_loaded(self, monkeypatch, tmp_path, reload_settings):
+        monkeypatch.setenv("BOT_TOKEN", "abc")
+        monkeypatch.setenv("TEMP_DIR", str(tmp_path))
+        monkeypatch.setenv("COOKIES_FILE", "/cookies/cookies.txt")
+        monkeypatch.setenv("ALLOWED_CHATS_FILE", "/data/allowed_chats.json")
+        s = reload_settings()
+        assert s.cookies_file == "/cookies/cookies.txt"
+        assert s.allowed_chats_file == "/data/allowed_chats.json"

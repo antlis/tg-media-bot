@@ -11,15 +11,36 @@ logger = get_logger()
 
 
 async def auth_middleware(handler, event: Message, data):
-    """Drop messages from users not in ALLOWED_USERS. Empty allowlist = open."""
+    """Gate every message on the allowlist. Empty ALLOWED_USERS = open to all.
+
+    Access is granted if the sender is an allowed user, OR the message is in a
+    group that an allowed user previously activated the bot in. When an allowed
+    user uses the bot in a group, that group is remembered so its other members
+    can use it too.
+    """
     allowed = get_settings().allowed_users
-    if allowed:
-        user = event.from_user
-        if user is None or user.id not in allowed:
-            logger.warning(f"Blocked unauthorized user: {user.id if user else 'unknown'}")
-            await event.answer("⛔ You are not authorized to use this bot.")
-            return
-    return await handler(event, data)
+    if not allowed:
+        return await handler(event, data)
+
+    from ..services.chat_store import get_chat_store
+
+    user = event.from_user
+    chat = getattr(event, "chat", None)
+    store = get_chat_store()
+
+    user_ok = user is not None and user.id in allowed
+    if user_ok:
+        # Activate (and remember) the group this allowed user is using.
+        if chat is not None and getattr(chat, "type", None) in ("group", "supergroup"):
+            store.add(chat.id)
+        return await handler(event, data)
+
+    if chat is not None and store.contains(chat.id):
+        return await handler(event, data)
+
+    logger.warning(f"Blocked unauthorized user: {user.id if user else 'unknown'}")
+    await event.answer("⛔ You are not authorized to use this bot.")
+    return
 
 
 def create_router(bot: Bot) -> Dispatcher:

@@ -43,6 +43,14 @@ class Settings:
     # yt-dlp options
     use_browser_cookies: bool = True
     browser_name: str = "firefox"
+    # Optional path to a Netscape-format cookies.txt for authenticated
+    # downloads (e.g. Instagram). Takes precedence over browser cookies when
+    # the file exists. Used in Docker, where browser cookies aren't available.
+    cookies_file: str = ""
+
+    # Optional path to a JSON file persisting group/supergroup chat IDs that an
+    # allowed user has activated the bot in. Empty = in-memory only (not saved).
+    allowed_chats_file: str = ""
 
     # Optional proxy for yt-dlp. Only used as a fallback when a download fails
     # with a geo/region block (e.g. media that's licensed only in some regions).
@@ -107,5 +115,7 @@ def _load_settings() -> Settings:
         rate_limit_per_user=int(os.getenv("RATE_LIMIT_PER_USER", "2")),
         use_browser_cookies=os.getenv("USE_BROWSER_COOKIES", "true").lower() == "true",
         browser_name=os.getenv("BROWSER_NAME", "firefox"),
+        cookies_file=os.getenv("COOKIES_FILE", ""),
+        allowed_chats_file=os.getenv("ALLOWED_CHATS_FILE", ""),
         proxy_url=os.getenv("PROXY_URL") or None,
     )
