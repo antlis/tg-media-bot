@@ -22,12 +22,14 @@
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+  html, body { max-width: 100%; overflow-x: hidden; }
   body {
     margin: 0;
     font-family: var(--sans);
     background: var(--bg);
     color: var(--text);
     line-height: 1.6;
+    overflow-wrap: break-word;
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent); text-decoration: none; }
@@ -75,6 +77,7 @@
   /* Feature grid */
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
   .card {
+    min-width: 0;
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
     padding: 24px; transition: border-color .15s ease, transform .15s ease;
   }
@@ -86,6 +89,7 @@
 
   /* Code blocks */
   pre {
+    max-width: 100%;
     background: #0a0d13; border: 1px solid var(--border); border-radius: 12px;
     padding: 20px 22px; overflow-x: auto; font-family: var(--mono); font-size: 13.5px;
     line-height: 1.7; color: #cdd6e4; margin: 0 0 18px;
@@ -97,6 +101,7 @@
   /* Steps */
   .steps { counter-reset: step; display: grid; gap: 22px; }
   .step { display: grid; grid-template-columns: 40px 1fr; gap: 16px; align-items: start; }
+  .step > div { min-width: 0; }  /* let wide code blocks scroll, not blow out the layout */
   .step .n {
     counter-increment: step; width: 40px; height: 40px; border-radius: 10px;
     display: grid; place-items: center; font-family: var(--mono); font-weight: 700;
@@ -118,9 +123,22 @@
   footer { padding: 48px 0 64px; text-align: center; color: var(--muted); font-size: 14px; }
   footer .links { display: flex; gap: 22px; justify-content: center; margin-bottom: 18px; flex-wrap: wrap; }
 
-  @media (max-width: 720px) {
+  /* Tablet: 3 → 2 columns */
+  @media (max-width: 920px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* Phone: single column + tighter spacing */
+  @media (max-width: 600px) {
+    .wrap { padding: 0 18px; }
+    header { padding: 64px 0 52px; }
+    section { padding: 52px 0; }
     .grid { grid-template-columns: 1fr; }
-    section { padding: 56px 0; }
+    .cta { flex-direction: column; }
+    .btn { width: 100%; justify-content: center; }
+    th, td { padding: 10px 8px; font-size: 13.5px; }
+    .step { grid-template-columns: 32px 1fr; gap: 12px; }
+    .step .n { width: 32px; height: 32px; }
   }
 </style>
 </head>
