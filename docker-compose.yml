@@ -28,6 +28,9 @@ services:
       start_period: 15s
 
   bot:
+    # `docker compose up` pulls the prebuilt image; `up --build` builds from
+    # this checkout instead (for local development / unreleased changes).
+    image: ghcr.io/antlis/tg-media-bot:latest
     build: .
     env_file: .env
     environment:

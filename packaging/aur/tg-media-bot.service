@@ -1,0 +1,28 @@
+[Unit]
+Description=tg-media-bot — self-hosted Telegram media downloader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as a transient, unprivileged system user. Downloads go to a private
+# /tmp; persistent state (e.g. allowed_chats.json) lives under /var/lib.
+DynamicUser=yes
+StateDirectory=tg-media-bot
+EnvironmentFile=/etc/tg-media-bot/.env
+WorkingDirectory=/usr/lib/tg-media-bot
+ExecStart=/usr/bin/tg-media-bot
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
