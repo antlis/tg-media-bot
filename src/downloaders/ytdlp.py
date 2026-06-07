@@ -33,6 +33,14 @@ _PROGRESS_TEMPLATE = (
 _PROGRESS_MIN_INTERVAL = 3.0  # seconds between progress callbacks
 _PCT_RE = re.compile(r"([\d.]+)%")
 
+# yt-dlp stderr markers that mean it has finished downloading and is now
+# post-processing (merging streams, recoding, embedding art) — no % for these.
+_POSTPROCESS_MARKERS = (
+    "[Merger]", "[VideoConvertor]", "[ExtractAudio]", "[Recode",
+    "[EmbedThumbnail]", "[Metadata]", "[ThumbnailsConvertor]",
+    "Merging formats", "Converting",
+)
+
 
 def parse_progress_line(line: str) -> Optional[dict]:
     """Parse a yt-dlp PROG line into {percent, percent_str, speed, eta}.
@@ -373,35 +381,50 @@ class YtDlpDownloader:
         always firing on 100%); other stdout lines are discarded.
         """
         stderr_chunks: List[str] = []
+        emit_lock = asyncio.Lock()
+        last_emit = 0.0
+
+        async def emit(info: dict, force: bool = False) -> None:
+            nonlocal last_emit
+            if not progress_callback:
+                return
+            if not force and time.monotonic() - last_emit < _PROGRESS_MIN_INTERVAL:
+                return
+            async with emit_lock:
+                last_emit = time.monotonic()
+                try:
+                    await progress_callback(info)
+                except Exception as e:  # a failed edit must not break the download
+                    logger.debug(f"progress callback error: {e}")
+
+        announced_processing = False
 
         async def drain_stderr():
+            nonlocal announced_processing
             while True:
                 line = await process.stderr.readline()
                 if not line:
                     break
-                stderr_chunks.append(line.decode(errors="replace"))
+                text = line.decode(errors="replace")
+                stderr_chunks.append(text)
+                # Surface the post-download processing phase once, so the bar
+                # doesn't sit at a confusing 100% during the merge/recode.
+                if not announced_processing and any(m in text for m in _POSTPROCESS_MARKERS):
+                    announced_processing = True
+                    await emit({"stage": "process"}, force=True)
 
         stderr_task = asyncio.ensure_future(drain_stderr())
-        last_emit = 0.0
         try:
             while True:
                 raw = await process.stdout.readline()
                 if not raw:
                     break
-                if not progress_callback:
-                    continue
                 info = parse_progress_line(raw.decode(errors="replace").strip())
                 if info is None:
                     continue
-                now = time.monotonic()
+                info["stage"] = "download"
                 done = info["percent"] is not None and info["percent"] >= 100
-                if not done and now - last_emit < _PROGRESS_MIN_INTERVAL:
-                    continue
-                last_emit = now
-                try:
-                    await progress_callback(info)
-                except Exception as e:  # a failed edit must not break the download
-                    logger.debug(f"progress callback error: {e}")
+                await emit(info, force=done)
         except asyncio.CancelledError:
             # Timeout/cancel: don't await the process here (it isn't dead yet —
             # the caller kills it). Just stop draining stderr and propagate.
