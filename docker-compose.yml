@@ -44,6 +44,8 @@ services:
       LOG_FILE: /data/tg-media-bot.log
       # Auto-allowed groups (bot added by an ALLOWED_USER) persist here
       ALLOWED_CHATS_FILE: /data/allowed_chats.json
+      # file_id cache so repeat downloads of the same URL are resent instantly
+      MEDIA_CACHE_FILE: /data/media_cache.json
     volumes:
       - bot-downloads:/tmp/tg-media-bot
       - bot-logs:/data

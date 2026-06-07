@@ -52,6 +52,11 @@ class Settings:
     # allowed user has activated the bot in. Empty = in-memory only (not saved).
     allowed_chats_file: str = ""
 
+    # Optional path to a JSON file caching Telegram file IDs of uploaded media,
+    # so repeat requests for the same URL are resent instantly instead of being
+    # re-downloaded. Empty = in-memory only (not saved).
+    cache_file: str = ""
+
     # Optional proxy for yt-dlp. Only used as a fallback when a download fails
     # with a geo/region block (e.g. media that's licensed only in some regions).
     # Format: socks5h://user:pass@host:port  (or http://...)
@@ -117,5 +122,6 @@ def _load_settings() -> Settings:
         browser_name=os.getenv("BROWSER_NAME", "firefox"),
         cookies_file=os.getenv("COOKIES_FILE", ""),
         allowed_chats_file=os.getenv("ALLOWED_CHATS_FILE", ""),
+        cache_file=os.getenv("MEDIA_CACHE_FILE", ""),
         proxy_url=os.getenv("PROXY_URL") or None,
     )

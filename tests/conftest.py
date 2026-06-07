@@ -37,6 +37,15 @@ def _reset_chat_store_singleton():
     chat_store._chat_store = None
 
 
+@pytest.fixture(autouse=True)
+def _reset_media_cache_singleton():
+    """Clear the shared MediaCache between tests for isolation."""
+    from src.services import media_cache
+    media_cache._media_cache = None
+    yield
+    media_cache._media_cache = None
+
+
 @pytest.fixture
 def reload_settings():
     """Return a callable that reloads Settings from the current environment."""

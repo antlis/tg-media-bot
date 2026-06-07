@@ -12,7 +12,8 @@ from ..downloaders import YtDlpDownloader
 from ..downloaders.ytdlp import render_progress_bar
 from ..queue import get_queue_manager
 from ..services.cleanup import get_cleanup_service
-from ..services.uploader import UploaderService
+from ..services.media_cache import get_media_cache
+from ..services.uploader import UploaderService, cache_entry_from_message
 from ..types.download import DownloadStatus, MediaFormat
 from ..utils.logger import get_logger
 
@@ -37,6 +38,7 @@ class BotHandlers:
         self.settings = get_settings()
         self.queue = get_queue_manager()
         self.cleanup = get_cleanup_service()
+        self.cache = get_media_cache()
         self.downloader = YtDlpDownloader()
         self.uploader = UploaderService(bot)
         self._user_states: dict[int, DownloadState] = {}
@@ -136,6 +138,24 @@ class BotHandlers:
 
         slot_acquired = False
         try:
+            # Instant re-send if we've already uploaded this URL+format.
+            cached = self.cache.get(task.url, task.preferred_format.value)
+            if cached:
+                try:
+                    msg = await self.uploader.send_cached(chat_id, cached, source_url=task.url)
+                    if msg:
+                        await self._update_status_message(
+                            chat_id, status_msg_id,
+                            f"✅ Sent (from cache).\nTask: `{task.task_id}`"
+                        )
+                        self.queue.update_task_status(task.task_id, DownloadStatus.COMPLETED)
+                        logger.info("Served from cache", task_id=task.task_id, url=task.url[:80])
+                        return
+                except Exception as e:
+                    # Stale file_id (rare) — drop it and download fresh.
+                    logger.info(f"Cached file_id unusable, re-downloading: {e}")
+                    self.cache.evict(task.url, task.preferred_format.value)
+
             # Wait for a global download slot (enforces MAX_PARALLEL_DOWNLOADS).
             if self.queue.slots_busy():
                 await self._update_status_message(
@@ -226,6 +246,15 @@ class BotHandlers:
                     str(result.output_path),
                     result.file_size,
                 )
+                # Cache the file_id so repeat requests are resent instantly.
+                entry = cache_entry_from_message(upload_result)
+                if entry is not None:
+                    entry["title"] = entry.get("title") or result.title or ""
+                    if result.performer and not entry.get("performer"):
+                        entry["performer"] = result.performer
+                    if result.duration and not entry.get("duration"):
+                        entry["duration"] = int(result.duration)
+                    self.cache.put(task.url, task.preferred_format.value, entry)
                 logger.download_completed(
                     user_id, task.url, task.platform,
                     task.task_id, result.file_size,

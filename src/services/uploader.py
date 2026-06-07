@@ -40,6 +40,21 @@ def _build_caption(title: str, source_url: Optional[str]) -> Optional[str]:
     return "\n\n".join(parts) if parts else None
 
 
+def cache_entry_from_message(message: Message) -> Optional[dict]:
+    """Extract a resendable {kind, file_id, title, performer, duration} entry
+    from a sent message, or None if it carries no cacheable file."""
+    if message.audio:
+        a = message.audio
+        return {"kind": "audio", "file_id": a.file_id, "title": a.title or "",
+                "performer": a.performer or "", "duration": a.duration or 0}
+    if message.video:
+        return {"kind": "video", "file_id": message.video.file_id,
+                "duration": message.video.duration or 0}
+    if message.document:
+        return {"kind": "document", "file_id": message.document.file_id}
+    return None
+
+
 async def _prepare_thumbnail(src: Path) -> Optional[Path]:
     """Resize cover art to Telegram's thumbnail limits via ffmpeg.
 
@@ -340,6 +355,40 @@ class UploaderService:
             file_path=file_path,
             caption=title,
             source_url=source_url,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def send_cached(
+        self,
+        chat_id: int,
+        entry: dict,
+        source_url: Optional[str] = None,
+        reply_to_message_id: Optional[int] = None,
+    ) -> Optional[Message]:
+        """Resend a previously uploaded file by its cached file_id (instant).
+
+        Raises on failure (e.g. a stale file_id) so the caller can fall back to
+        a fresh download.
+        """
+        kind = entry["kind"]
+        file_id = entry["file_id"]
+        caption = _build_caption(entry.get("title", ""), source_url)
+        duration = int(entry["duration"]) if entry.get("duration") else None
+
+        if kind == "audio":
+            return await self.bot.send_audio(
+                chat_id=chat_id, audio=file_id, caption=caption, parse_mode="HTML",
+                title=entry.get("title") or None, performer=entry.get("performer") or None,
+                duration=duration, reply_to_message_id=reply_to_message_id,
+            )
+        if kind == "video":
+            return await self.bot.send_video(
+                chat_id=chat_id, video=file_id, caption=caption, parse_mode="HTML",
+                duration=duration, supports_streaming=True,
+                reply_to_message_id=reply_to_message_id,
+            )
+        return await self.bot.send_document(
+            chat_id=chat_id, document=file_id, caption=caption, parse_mode="HTML",
             reply_to_message_id=reply_to_message_id,
         )
 
