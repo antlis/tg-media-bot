@@ -6,9 +6,10 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from ..config import get_settings
 from ..types.download import MediaFormat
@@ -20,6 +21,40 @@ logger = get_logger()
 # Per-connection network stall timeout (seconds). Distinct from the total
 # DOWNLOAD_TIMEOUT, which bounds the whole yt-dlp run.
 _SOCKET_TIMEOUT = 60
+
+# Live-progress wiring. yt-dlp prints one PROG line per update (--newline +
+# --progress-template); we parse it and throttle callbacks so message edits
+# stay well under Telegram's rate limit.
+_PROGRESS_PREFIX = "PROG|"
+_PROGRESS_TEMPLATE = (
+    "download:" + _PROGRESS_PREFIX
+    + "%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s"
+)
+_PROGRESS_MIN_INTERVAL = 3.0  # seconds between progress callbacks
+_PCT_RE = re.compile(r"([\d.]+)%")
+
+
+def parse_progress_line(line: str) -> Optional[dict]:
+    """Parse a yt-dlp PROG line into {percent, percent_str, speed, eta}.
+
+    Returns None for any line that isn't a progress update.
+    """
+    if not line.startswith(_PROGRESS_PREFIX):
+        return None
+    parts = line.split("|")
+    pct_str = parts[1].strip() if len(parts) > 1 else ""
+    speed = parts[2].strip() if len(parts) > 2 else ""
+    eta = parts[3].strip() if len(parts) > 3 else ""
+    m = _PCT_RE.search(pct_str)
+    percent = float(m.group(1)) if m else None
+    return {"percent": percent, "percent_str": pct_str, "speed": speed, "eta": eta}
+
+
+def render_progress_bar(percent: Optional[float], width: int = 10) -> str:
+    """Render a ``█/░`` bar for a 0–100 percentage (None → empty bar)."""
+    pct = 0.0 if percent is None else max(0.0, min(100.0, percent))
+    filled = int(pct / 100 * width)
+    return "█" * filled + "░" * (width - filled)
 
 
 @dataclass
@@ -222,7 +257,7 @@ class YtDlpDownloader:
 
         # Build and run; on a geo-restriction failure, retry once via the proxy.
         cmd = self._build_command(url, output_dir, effective_format)
-        result = await self._run_download(cmd, output_dir, platform)
+        result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
         if (
             not result.success
@@ -235,7 +270,7 @@ class YtDlpDownloader:
             cmd = self._build_command(
                 url, output_dir, effective_format, proxy=self.settings.proxy_url
             )
-            result = await self._run_download(cmd, output_dir, platform)
+            result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
         return result
 
@@ -265,13 +300,66 @@ class YtDlpDownloader:
             except ProcessLookupError:
                 pass
 
+    async def _stream(self, process, progress_callback: Optional[Callable]) -> str:
+        """Read the subprocess to completion, forwarding throttled progress.
+
+        Returns the collected stderr text. stdout PROG lines drive
+        ``progress_callback`` (at most once per ``_PROGRESS_MIN_INTERVAL``,
+        always firing on 100%); other stdout lines are discarded.
+        """
+        stderr_chunks: List[str] = []
+
+        async def drain_stderr():
+            while True:
+                line = await process.stderr.readline()
+                if not line:
+                    break
+                stderr_chunks.append(line.decode(errors="replace"))
+
+        stderr_task = asyncio.ensure_future(drain_stderr())
+        last_emit = 0.0
+        try:
+            while True:
+                raw = await process.stdout.readline()
+                if not raw:
+                    break
+                if not progress_callback:
+                    continue
+                info = parse_progress_line(raw.decode(errors="replace").strip())
+                if info is None:
+                    continue
+                now = time.monotonic()
+                done = info["percent"] is not None and info["percent"] >= 100
+                if not done and now - last_emit < _PROGRESS_MIN_INTERVAL:
+                    continue
+                last_emit = now
+                try:
+                    await progress_callback(info)
+                except Exception as e:  # a failed edit must not break the download
+                    logger.debug(f"progress callback error: {e}")
+        except asyncio.CancelledError:
+            # Timeout/cancel: don't await the process here (it isn't dead yet —
+            # the caller kills it). Just stop draining stderr and propagate.
+            stderr_task.cancel()
+            raise
+
+        # Normal completion: stdout closed, so the process is finishing.
+        await process.wait()
+        await stderr_task
+        return "".join(stderr_chunks)
+
     async def _run_download(
-        self, cmd: List[str], output_dir: Path, platform: str
+        self,
+        cmd: List[str],
+        output_dir: Path,
+        platform: str,
+        progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """Run a single yt-dlp invocation and parse the result.
 
-        Bounded by ``DOWNLOAD_TIMEOUT``; on timeout or cancellation the child
-        process is killed so it can't keep downloading in the background.
+        Streams download progress to ``progress_callback``. Bounded by
+        ``DOWNLOAD_TIMEOUT``; on timeout or cancellation the child process is
+        killed so it can't keep downloading in the background.
         """
         process = None
         try:
@@ -282,8 +370,8 @@ class YtDlpDownloader:
             )
 
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
+                stderr = await asyncio.wait_for(
+                    self._stream(process, progress_callback),
                     timeout=self.settings.download_timeout,
                 )
             except asyncio.TimeoutError:
@@ -298,7 +386,7 @@ class YtDlpDownloader:
                 )
 
             if process.returncode != 0:
-                error_msg = stderr.decode(errors="replace").strip()
+                error_msg = stderr.strip()
                 # Try to extract useful error message
                 if "ERROR" in error_msg:
                     error_lines = [l for l in error_msg.split("\n") if "ERROR" in l]
@@ -431,8 +519,14 @@ class YtDlpDownloader:
         # Don't overwrite
         cmd.append("--no-overwrites")
 
-        # Quiet for cleaner output
-        cmd.append("-q")
+        # Emit machine-parseable download progress, one update per line, so the
+        # runner can stream it back as a live bar.
+        cmd.extend([
+            "--no-warnings",
+            "--progress",
+            "--newline",
+            "--progress-template", _PROGRESS_TEMPLATE,
+        ])
 
         # URL
         cmd.append(url)

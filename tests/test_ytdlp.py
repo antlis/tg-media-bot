@@ -4,7 +4,11 @@ import json
 
 import pytest
 
-from src.downloaders.ytdlp import YtDlpDownloader
+from src.downloaders.ytdlp import (
+    YtDlpDownloader,
+    parse_progress_line,
+    render_progress_bar,
+)
 from src.types.download import MediaFormat
 
 
@@ -81,6 +85,11 @@ class TestBuildCommand:
         assert "--cookies-from-browser" not in cmd
         assert "--cookies" not in cmd
 
+    def test_progress_flags_present(self, dl, tmp_path):
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUDIO)
+        assert "--newline" in cmd and "--progress-template" in cmd
+        assert any(arg.startswith("download:PROG|") for arg in cmd)
+
     def test_cookies_file_used_when_present(self, dl, tmp_path):
         cookies = tmp_path / "cookies.txt"
         cookies.write_text("# Netscape HTTP Cookie File\n")
@@ -153,20 +162,95 @@ class TestFormatsList:
         assert "18" in out and "mp4" in out and "6.2MB" in out
 
 
+class TestProgressParsing:
+    def test_parses_full_line(self):
+        info = parse_progress_line("PROG| 42.3%|1.20MiB/s|00:05")
+        assert info["percent"] == 42.3
+        assert info["percent_str"] == "42.3%"
+        assert info["speed"] == "1.20MiB/s"
+        assert info["eta"] == "00:05"
+
+    def test_non_progress_line_is_none(self):
+        assert parse_progress_line("[download] Destination: x.mp4") is None
+        assert parse_progress_line("") is None
+
+    def test_unknown_percent(self):
+        info = parse_progress_line("PROG|   N/A|   N/A|   N/A")
+        assert info is not None and info["percent"] is None
+
+    @pytest.mark.parametrize("pct,filled", [(0, 0), (50, 5), (100, 10), (None, 0)])
+    def test_bar_fill(self, pct, filled):
+        bar = render_progress_bar(pct)
+        assert bar.count("█") == filled
+        assert len(bar) == 10
+
+    def test_bar_clamps_over_100(self):
+        assert render_progress_bar(150).count("█") == 10
+
+
+class _FakeStream:
+    def __init__(self, lines):
+        self._lines = list(lines)
+
+    async def readline(self):
+        return self._lines.pop(0) if self._lines else b""
+
+
+class _FakeProc:
+    def __init__(self, stdout_lines, stderr_lines=None, returncode=0):
+        self.stdout = _FakeStream(stdout_lines)
+        self.stderr = _FakeStream(stderr_lines or [])
+        self._rc = returncode
+        self.returncode = None
+
+    async def wait(self):
+        self.returncode = self._rc
+        return self._rc
+
+
+class TestProgressStreaming:
+    async def test_throttles_but_always_emits_completion(self, dl):
+        # Three updates arrive back-to-back; the throttle should let the first
+        # through and suppress the mid one, but 100% always fires.
+        proc = _FakeProc([
+            b"[download] Destination: x.mp4\n",   # ignored
+            b"PROG| 10.0%|1.0MiB/s|00:10\n",      # first -> emit
+            b"PROG| 50.0%|1.0MiB/s|00:05\n",      # within 3s -> suppressed
+            b"PROG|100.0%|1.0MiB/s|00:00\n",      # done -> emit
+        ])
+        seen = []
+
+        async def cb(info):
+            seen.append(info["percent"])
+
+        stderr = await dl._stream(proc, cb)
+        assert seen == [10.0, 100.0]
+        assert proc.returncode == 0
+        assert stderr == ""
+
+    async def test_no_callback_is_fine(self, dl):
+        proc = _FakeProc([b"PROG| 50.0%|1.0MiB/s|00:05\n"], stderr_lines=[b"oops\n"])
+        stderr = await dl._stream(proc, None)
+        assert stderr == "oops\n"
+
+
 class TestDownloadTimeout:
     async def test_timeout_kills_process_and_fails(self, dl, tmp_path, monkeypatch):
         import asyncio
 
         dl.settings.download_timeout = 0.01
 
+        class BlockingStream:
+            async def readline(self):
+                await asyncio.sleep(10)  # never returns before the timeout
+                return b""
+
         class FakeProc:
             def __init__(self):
                 self.returncode = None
                 self.killed = False
-
-            async def communicate(self):
-                await asyncio.sleep(10)  # longer than the timeout
-                return b"", b""
+                self.stdout = BlockingStream()
+                self.stderr = BlockingStream()
 
             def kill(self):
                 self.killed = True
