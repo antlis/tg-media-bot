@@ -25,7 +25,8 @@ async def auth_middleware(handler, event: Message, data):
     from ..services.chat_store import get_chat_store
 
     user = event.from_user
-    chat = getattr(event, "chat", None)
+    # Message has .chat directly; CallbackQuery carries it on .message.
+    chat = getattr(event, "chat", None) or getattr(getattr(event, "message", None), "chat", None)
     store = get_chat_store()
 
     user_ok = user is not None and user.id in allowed
@@ -47,8 +48,9 @@ def create_router(bot: Bot) -> Dispatcher:
     """Create and configure the dispatcher with all handlers."""
     dp = Dispatcher()
 
-    # Gate every message on the allowlist before any handler runs
+    # Gate every message and callback on the allowlist before any handler runs
     dp.message.outer_middleware(auth_middleware)
+    dp.callback_query.outer_middleware(auth_middleware)
 
     # Register commands
     dp.message.register(cmd_start, Command("start"))
@@ -58,6 +60,12 @@ def create_router(bot: Bot) -> Dispatcher:
     dp.message.register(cmd_cancel, Command("cancel"))
     dp.message.register(cmd_status, Command("status"))
     dp.message.register(cmd_formats, Command("formats"))
+
+    # Inline quality-picker button presses
+    @dp.callback_query(lambda c: (c.data or "").startswith("q:"))
+    async def handle_quality(callback):
+        from .handlers import get_handlers
+        await get_handlers(bot).on_quality_choice(callback)
 
     # Handle text messages (URLs)
     @dp.message()

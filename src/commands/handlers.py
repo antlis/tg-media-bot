@@ -39,7 +39,7 @@ Send me any media URL and I'll download and send it back to you.
 /help - Show this help
 /audio - Switch to audio-only mode (MP3)
 /video - Switch to video download mode
-/formats &lt;url&gt; - Show available formats
+/formats &lt;url&gt; - Pick a download quality (buttons)
 /cancel &lt;task_id&gt; - Cancel a download
 /status - Show your active downloads
 
@@ -122,8 +122,10 @@ Send me any media URL and I'll download and send it back to you.
         await message.answer(f"📊 Your Downloads:\n\n{summary}")
 
     async def cmd_formats(self, message: types.Message):
-        """Handle /formats command."""
+        """Handle /formats — show an inline quality picker for a URL."""
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
         from ..bot.handlers import get_handlers
+        from ..bot.quality import QUALITY_CHOICES
 
         # Get URL from message text
         parts = message.text.split(maxsplit=1)
@@ -141,22 +143,9 @@ Send me any media URL and I'll download and send it back to you.
             await message.answer("❌ Invalid URL.")
             return
 
-        status_msg = await message.answer("🔍 Fetching available formats...")
-
-        formats = await handlers.downloader.get_formats(url)
-
-        if not formats:
-            await self.bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=status_msg.message_id,
-                text="❌ Could not fetch formats. The video may not be available.",
-            )
-            return
-
-        output = handlers.downloader.format_formats_list(formats)
-        await self.bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=status_msg.message_id,
-            text=f"```\n{output}\n```",
-            parse_mode="Markdown",
-        )
+        token = handlers.stash_url(url)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=label, callback_data=f"q:{token}:{value}")]
+            for label, value in QUALITY_CHOICES
+        ])
+        await message.answer("🎚️ Choose a quality:", reply_markup=keyboard)

@@ -74,6 +74,7 @@ class QueueManager:
         user_id: int,
         url: str,
         preferred_format: MediaFormat = MediaFormat.AUTO,
+        max_height: Optional[int] = None,
     ) -> tuple[Optional[DownloadTask], str]:
         """
         Add a new download task to the queue.
@@ -102,6 +103,7 @@ class QueueManager:
             user_id=user_id,
             url=url,
             preferred_format=preferred_format,
+            max_height=max_height,
         )
 
         # Store task

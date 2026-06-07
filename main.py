@@ -100,7 +100,7 @@ async def main():
             BotCommand(command="help", description="Show help and supported platforms"),
             BotCommand(command="audio", description="Audio-only mode (MP3)"),
             BotCommand(command="video", description="Video mode (default)"),
-            BotCommand(command="formats", description="List formats for a URL"),
+            BotCommand(command="formats", description="Pick download quality for a URL"),
             BotCommand(command="status", description="Show your active downloads"),
             BotCommand(command="cancel", description="Cancel a download by task ID"),
         ])
