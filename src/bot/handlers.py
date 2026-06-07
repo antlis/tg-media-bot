@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramAPIError
 
 from ..config import get_settings
 from ..downloaders import YtDlpDownloader
+from ..downloaders.ytdlp import render_progress_bar
 from ..queue import get_queue_manager
 from ..services.cleanup import get_cleanup_service
 from ..services.uploader import UploaderService
@@ -155,11 +156,25 @@ class BotHandlers:
                 f"📥 Downloading...\nTask: `{task.task_id}`"
             )
 
+            # Live progress bar (edits the same status message, throttled in
+            # the downloader). Works the same in DMs and groups.
+            async def on_progress(info):
+                bar = render_progress_bar(info["percent"])
+                meta = " · ".join(
+                    p for p in (info["speed"], f"ETA {info['eta']}" if info["eta"] else "") if p
+                )
+                text = f"📥 Downloading...\n`{bar}` {info['percent_str']}".rstrip()
+                if meta:
+                    text += f"\n{meta}"
+                text += f"\nTask: `{task.task_id}`"
+                await self._update_status_message(chat_id, status_msg_id, text)
+
             # Download
             result = await self.downloader.download(
                 url=task.url,
                 output_dir=temp_dir,
                 preferred_format=task.preferred_format,
+                progress_callback=on_progress,
             )
 
             if not result.success:

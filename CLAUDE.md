@@ -53,6 +53,8 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 
 `YtDlpDownloader._cookie_args()` centralizes cookie flags: a `COOKIES_FILE` (when the file exists) wins over `--cookies-from-browser`; used by both `get_info()` and `_build_command()`.
 
+**Live progress:** downloads run with `--newline --progress-template "download:PROG|…"`; `_run_download` streams stdout via `_stream()`, parses `PROG|` lines (`parse_progress_line`), and invokes the `progress_callback` at most once per `_PROGRESS_MIN_INTERVAL` (always on 100%). `BotHandlers._process_download_task` passes a callback that edits the status message with `render_progress_bar`. Only the download phase has progress — the Bot API exposes no upload-progress callback.
+
 ## Conventions
 
 - **Config only via `src/config/settings.py`.** Add a field to `Settings`, read the env var in `_load_settings()`. Don't call `os.getenv` elsewhere.
