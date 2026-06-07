@@ -53,7 +53,7 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 - `src/services/media_cache.py` — `MediaCache`: maps `(url, format)` → an uploaded file's `{kind, file_id, …}` so repeat requests are resent by `file_id` instantly (no re-download). Backed by `MEDIA_CACHE_FILE` when set. `_process_download_task` checks it before acquiring a slot; on a stale `file_id` the entry is evicted and the download proceeds. Filled from `cache_entry_from_message()` after a successful upload.
 - `src/utils/sanitizer.py` — filename sanitization / path-traversal prevention.
 
-`YtDlpDownloader._cookie_args()` centralizes cookie flags: a `COOKIES_FILE` (when the file exists) wins over `--cookies-from-browser`; used by both `get_info()` and `_build_command()`.
+`YtDlpDownloader._cookie_args()` centralizes cookie flags: a `COOKIES_FILE` (when the file exists) wins over `--cookies-from-browser`; used by both `get_info()` and `_build_command()`. **Cookie fallback:** cookies can break extraction on some sites (a flagged YouTube session forces a format-less "tv downgraded" response); when a download fails with a format/extraction error (`_is_format_error`) and cookies were used, `download()` retries once with `use_cookies=False`, keeping the original error if the retry also fails.
 
 `friendly_error()` (in `ytdlp.py`) maps raw yt-dlp stderr to short actionable hints (age-restricted → cookies, region block → proxy, etc.); the download handler shows it on failure while the raw error is still logged.
 

@@ -290,9 +290,28 @@ class YtDlpDownloader:
         effective_format = self._effective_format(platform, preferred_format)
         logger.info(f"Starting download", platform=platform, url=url[:80])
 
-        # Build and run; on a geo-restriction failure, retry once via the proxy.
+        # Build and run.
         cmd = self._build_command(url, output_dir, effective_format, max_height=max_height)
         result = await self._run_download(cmd, output_dir, platform, progress_callback)
+
+        # Fallback: cookies can break extraction on some sites (e.g. a flagged
+        # YouTube session forces a format-less "tv downgraded" response). If a
+        # format/extraction error came back and cookies were in play, retry
+        # once without them — but keep the original error if the retry also fails.
+        if (
+            not result.success
+            and self._cookie_args()
+            and self._is_format_error(result.error)
+        ):
+            logger.info(
+                "Format error with cookies — retrying without cookies", platform=platform
+            )
+            cmd = self._build_command(
+                url, output_dir, effective_format, max_height=max_height, use_cookies=False
+            )
+            retry = await self._run_download(cmd, output_dir, platform, progress_callback)
+            if retry.success:
+                result = retry
 
         if (
             not result.success
@@ -325,6 +344,16 @@ class YtDlpDownloader:
         """True if the failure looks like a country/region licensing block."""
         e = (error or "").lower()
         return any(m in e for m in self._GEO_MARKERS)
+
+    @staticmethod
+    def _is_format_error(error: str) -> bool:
+        """True if the failure is a format/extraction problem cookies might cause."""
+        e = (error or "").lower()
+        return (
+            "requested format is not available" in e
+            or "unable to extract" in e
+            or "no video formats" in e
+        )
 
     @staticmethod
     async def _terminate(process) -> None:
@@ -508,6 +537,7 @@ class YtDlpDownloader:
         preferred_format: MediaFormat,
         proxy: Optional[str] = None,
         max_height: Optional[int] = None,
+        use_cookies: bool = True,
     ) -> List[str]:
         """Build yt-dlp command with appropriate options."""
         cmd = ["yt-dlp", "--no-playlist"]
@@ -516,8 +546,9 @@ class YtDlpDownloader:
         if proxy:
             cmd.extend(["--proxy", proxy])
 
-        # Cookie authentication
-        cmd.extend(self._cookie_args())
+        # Cookie authentication (skipped on the no-cookies fallback retry)
+        if use_cookies:
+            cmd.extend(self._cookie_args())
 
         # Suppress version update warning
         cmd.append("--no-update")
