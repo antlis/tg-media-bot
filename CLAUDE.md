@@ -59,7 +59,7 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 
 In Docker, `docker-entrypoint.sh` refreshes yt-dlp (`pip install -U`, best-effort) on container start unless `YTDLP_AUTO_UPDATE=false`, then launches the bot — so site breakages are fixed without an image rebuild.
 
-**Live progress:** downloads run with `--newline --progress-template "download:PROG|…"`; `_run_download` streams stdout via `_stream()`, parses `PROG|` lines (`parse_progress_line`), and invokes the `progress_callback` at most once per `_PROGRESS_MIN_INTERVAL` (always on 100%). `BotHandlers._process_download_task` passes a callback that edits the status message with `render_progress_bar`. Only the download phase has progress — the Bot API exposes no upload-progress callback.
+**Live progress:** downloads run with `--newline --progress-template "download:PROG|…"`; `_run_download` streams stdout via `_stream()`, parses `PROG|` lines (`parse_progress_line`), and invokes the `progress_callback` at most once per `_PROGRESS_MIN_INTERVAL` (always on 100%). Callback info carries a `stage`: `"download"` (bar) or `"process"` — `_stream` watches stderr for `_POSTPROCESS_MARKERS` (merge/recode/embed) and emits a one-shot `process` stage so the bar doesn't sit at a confusing 100% during post-processing. `BotHandlers._process_download_task` renders the bar via `render_progress_bar`. **Upload:** the Bot API has no upload-progress callback, so `_upload_heartbeat` edits the status with elapsed time + size every few seconds while the upload is in flight (a liveness indicator, not a real %).
 
 ## Conventions
 

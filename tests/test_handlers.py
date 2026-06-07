@@ -50,6 +50,27 @@ class TestCancelDownload:
         assert handlers.cancel_download(task.task_id, user_id=999) is False
 
 
+class TestUploadHeartbeat:
+    async def test_emits_uploading_with_size(self, handlers):
+        import asyncio
+        calls = []
+
+        async def fake_edit(chat_id, message_id, text):
+            calls.append(text)
+
+        handlers._update_status_message = fake_edit
+        hb = asyncio.create_task(
+            handlers._upload_heartbeat(1, 2, "abc123", 240 * 1024 * 1024)
+        )
+        await asyncio.sleep(0.05)
+        hb.cancel()
+        try:
+            await hb
+        except asyncio.CancelledError:
+            pass
+        assert calls and "Uploading" in calls[0] and "240 MB" in calls[0]
+
+
 class TestExtractUrls:
     def test_single_url(self, handlers):
         assert handlers.extract_urls("https://youtube.com/watch?v=x") == [

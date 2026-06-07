@@ -278,6 +278,20 @@ class TestProgressStreaming:
         stderr = await dl._stream(proc, None)
         assert stderr == "oops\n"
 
+    async def test_processing_stage_emitted_from_stderr(self, dl):
+        proc = _FakeProc(
+            stdout_lines=[b"PROG|100.0%|1.0MiB/s|00:00\n"],
+            stderr_lines=[b"[Merger] Merging formats into \"x.mp4\"\n"],
+        )
+        stages = []
+
+        async def cb(info):
+            stages.append(info.get("stage"))
+
+        await dl._stream(proc, cb)
+        assert "download" in stages
+        assert "process" in stages
+
 
 class TestDownloadTimeout:
     async def test_timeout_kills_process_and_fails(self, dl, tmp_path, monkeypatch):

@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import time
 import uuid
 from typing import Optional
 
@@ -19,6 +20,9 @@ from ..types.download import DownloadStatus, MediaFormat
 from ..utils.logger import get_logger
 
 logger = get_logger()
+
+# How often the upload heartbeat refreshes the status message (seconds).
+_UPLOAD_HEARTBEAT_INTERVAL = 3.0
 
 
 class DownloadState:
@@ -228,9 +232,15 @@ class BotHandlers:
                 f"📥 Downloading...\nTask: `{task.task_id}`"
             )
 
-            # Live progress bar (edits the same status message, throttled in
-            # the downloader). Works the same in DMs and groups.
+            # Live progress (edits the same status message, throttled in the
+            # downloader). Works the same in DMs and groups.
             async def on_progress(info):
+                if info.get("stage") == "process":
+                    await self._update_status_message(
+                        chat_id, status_msg_id,
+                        f"🔄 Processing (merging/encoding)…\nTask: `{task.task_id}`"
+                    )
+                    return
                 bar = render_progress_bar(info["percent"])
                 meta = " · ".join(
                     p for p in (info["speed"], f"ETA {info['eta']}" if info["eta"] else "") if p
@@ -268,23 +278,24 @@ class BotHandlers:
             task.file_size = result.file_size
             task.status = DownloadStatus.PROCESSING
 
-            await self._update_status_message(
-                chat_id, status_msg_id,
-                f"📤 Uploading...\n{result.output_path.name}\n"
-                f"Size: {result.file_size / (1024*1024):.1f}MB"
+            # Upload. The Bot API exposes no upload-progress callback, so run a
+            # heartbeat that shows elapsed time + size while it's in flight.
+            hb = asyncio.create_task(
+                self._upload_heartbeat(chat_id, status_msg_id, task.task_id, result.file_size)
             )
-
-            # Upload
-            upload_result = await self.uploader.upload_media(
-                chat_id=chat_id,
-                file_path=result.output_path,
-                media_format=task.preferred_format,
-                title=result.title,
-                performer=result.performer,
-                duration=result.duration,
-                thumbnail_path=result.thumbnail_path,
-                source_url=task.url,
-            )
+            try:
+                upload_result = await self.uploader.upload_media(
+                    chat_id=chat_id,
+                    file_path=result.output_path,
+                    media_format=task.preferred_format,
+                    title=result.title,
+                    performer=result.performer,
+                    duration=result.duration,
+                    thumbnail_path=result.thumbnail_path,
+                    source_url=task.url,
+                )
+            finally:
+                hb.cancel()
 
             if upload_result:
                 await self._update_status_message(
@@ -371,6 +382,23 @@ class BotHandlers:
                 self.queue.release_slot()
             success, count = self.cleanup.cleanup_task_dir(temp_dir)
             logger.cleanup_completed(task.task_id, success, count)
+
+    async def _upload_heartbeat(self, chat_id, status_msg_id, task_id, size_bytes):
+        """Edit the status message with elapsed time + size while uploading.
+
+        The Bot API gives no upload-progress callback, so this is a liveness
+        indicator (not a real %). Cancelled by the caller when the upload ends.
+        """
+        size_mb = size_bytes / (1024 * 1024)
+        start = time.monotonic()
+        while True:
+            elapsed = int(time.monotonic() - start)
+            suffix = f" {elapsed}s" if elapsed else ""
+            await self._update_status_message(
+                chat_id, status_msg_id,
+                f"📤 Uploading…{suffix} · {size_mb:.0f} MB\nTask: `{task_id}`"
+            )
+            await asyncio.sleep(_UPLOAD_HEARTBEAT_INTERVAL)
 
     async def _update_status_message(self, chat_id: int, message_id: int, text: str):
         """Edit status message."""
