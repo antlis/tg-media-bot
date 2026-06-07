@@ -219,12 +219,17 @@
         <div class="n"></div>
         <div>
           <h3>Run</h3>
-<pre><span class="p">docker</span> compose up -d --build
+<pre><span class="p">docker</span> compose up -d
 <span class="p">docker</span> compose logs -f bot</pre>
-          <p class="note">Then message your bot a URL. That's it.</p>
+          <p class="note">Pulls the prebuilt <code>ghcr.io/antlis/tg-media-bot</code> image — no local build. Then message your bot a URL. That's it.</p>
         </div>
       </div>
     </div>
+    <p class="note" style="margin-top:28px">
+      <strong>Other ways to install:</strong>
+      Arch users — <code>paru -S tg-media-bot</code> (<a href="https://aur.archlinux.org/packages/tg-media-bot">AUR</a>, ships a systemd service).
+      Bare Python and systemd setup are in the <a href="https://github.com/antlis/tg-media-bot/blob/master/INSTALLATION.md">installation guide</a>.
+    </p>
   </div>
 </section>
 
@@ -258,8 +263,8 @@
   <div class="wrap">
     <div class="links">
       <a href="https://github.com/antlis/tg-media-bot">GitHub</a>
-      <a href="https://github.com/antlis/tg-media-bot/blob/main/README.md">Docs</a>
-      <a href="https://github.com/antlis/tg-media-bot/blob/main/INSTALLATION.md">Install guide</a>
+      <a href="https://github.com/antlis/tg-media-bot#readme">Docs</a>
+      <a href="https://github.com/antlis/tg-media-bot/blob/master/INSTALLATION.md">Install guide</a>
       <a href="https://github.com/antlis/tg-media-bot/issues">Issues</a>
     </div>
     <p>Built with yt-dlp &amp; aiogram · MIT licensed · © 2026 antlis</p>
