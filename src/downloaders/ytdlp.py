@@ -57,6 +57,39 @@ def render_progress_bar(percent: Optional[float], width: int = 10) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+# Substring (lowercased) → friendly, actionable hint. First match wins.
+_ERROR_HINTS = (
+    ("sign in to confirm your age", "🔞 Age-restricted — set a COOKIES_FILE from a logged-in account."),
+    ("confirm you're not a bot", "🤖 This site wants a logged-in session — set a COOKIES_FILE."),
+    ("private video", "🔒 This video is private."),
+    ("members-only", "🔒 Members-only content — needs a subscribed account's cookies."),
+    ("login required", "🔑 Login required — set a COOKIES_FILE from a logged-in account."),
+    ("only available for registered", "🔑 Registered users only — set a COOKIES_FILE."),
+    ("requested format is not available", "🎚️ That quality isn't available — try another via /formats."),
+    ("video unavailable", "🚫 The video is unavailable (removed or not public)."),
+    ("unsupported url", "🤔 That link isn't a supported media URL."),
+    ("unable to extract", "🤔 Couldn't read that page — the link may be wrong or unsupported."),
+    ("http error 404", "🚫 Not found (404) — the link may be dead."),
+    ("http error 403", "⛔ Access denied (403) — may need cookies or a different region."),
+    ("unable to download webpage", "🌐 Network hiccup reaching the site — try again."),
+)
+
+
+def friendly_error(raw: str) -> str:
+    """Map a raw yt-dlp error to a short, actionable hint.
+
+    Falls back to a trimmed version of the raw error when nothing matches.
+    """
+    e = (raw or "").lower()
+    for needle, hint in _ERROR_HINTS:
+        if needle in e:
+            return hint
+    if "geo" in e or "in your country" in e or "in your region" in e:
+        return "🌍 Region-restricted — set a PROXY_URL to retry through another region."
+    cleaned = (raw or "").replace("ERROR:", "").strip()
+    return cleaned[:300] if cleaned else "Download failed."
+
+
 @dataclass
 class DownloadResult:
     """Result of a download operation."""

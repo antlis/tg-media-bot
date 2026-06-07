@@ -6,10 +6,33 @@ import pytest
 
 from src.downloaders.ytdlp import (
     YtDlpDownloader,
+    friendly_error,
     parse_progress_line,
     render_progress_bar,
 )
 from src.types.download import MediaFormat
+
+
+class TestFriendlyError:
+    @pytest.mark.parametrize("raw,needle", [
+        ("ERROR: Sign in to confirm your age", "age-restricted"),
+        ("ERROR: Private video. Sign in", "private"),
+        ("ERROR: Requested format is not available", "quality"),
+        ("ERROR: Video unavailable", "unavailable"),
+        ("ERROR: Unsupported URL: https://x", "supported media URL"),
+        ("ERROR: HTTP Error 404: Not Found", "404"),
+        ("ERROR: blocked it in your country", "Region-restricted"),
+    ])
+    def test_maps_known_errors(self, raw, needle):
+        assert needle.lower() in friendly_error(raw).lower()
+
+    def test_unknown_error_trimmed(self):
+        out = friendly_error("ERROR: some novel failure mode")
+        assert "some novel failure mode" in out
+        assert "ERROR:" not in out
+
+    def test_empty(self):
+        assert friendly_error("") == "Download failed."
 
 
 @pytest.fixture

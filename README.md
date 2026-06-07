@@ -20,6 +20,8 @@ This bot downloads media from 1000+ platforms using yt-dlp and uploads the files
 - Automatic temporary file cleanup
 - Live download progress bar that updates in place (works the same in DMs and groups)
 - Instant re-sends: a previously downloaded URL is resent from Telegram's cache (by `file_id`) without re-downloading
+- Friendly, actionable error messages (e.g. "age-restricted — set a COOKIES_FILE")
+- yt-dlp kept current automatically in Docker (refreshed on container start)
 - Uploads up to 2GB via a bundled local Telegram Bot API server (vs. 50MB on the standard API)
 - Audio-only sources (e.g. SoundCloud) are auto-detected and always fetched as tagged MP3
 - Direct media URLs (e.g. an imageboard `.webm`) are transcoded to a streamable MP4 (H.264/AAC, `moov` at the start) so Telegram plays them inline instead of attaching as a file
@@ -148,6 +150,7 @@ All settings are loaded from `.env` (see `src/config/settings.py`).
 | `MEDIA_CACHE_FILE` | no | empty | Path to a JSON file caching `file_id`s so repeat URLs are resent instantly |
 | `PROXY_URL` | no | empty | Proxy used **only** as a fallback retry when a download fails with a geo/region block (`socks5h://…` or `http://…`) |
 | `BOT_API_HOST_PORT` | no | `8082` | Docker only: host port for the local Bot API server |
+| `YTDLP_AUTO_UPDATE` | no | `true` | Docker only: refresh yt-dlp to the latest release on container start |
 
 ## Access Control
 
