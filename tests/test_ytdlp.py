@@ -113,6 +113,28 @@ class TestBuildCommand:
         assert "--newline" in cmd and "--progress-template" in cmd
         assert any(arg.startswith("download:PROG|") for arg in cmd)
 
+    def test_use_cookies_false_omits_cookies(self, dl, tmp_path):
+        cookies = tmp_path / "cookies.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        dl.settings.cookies_file = str(cookies)
+        dl.settings.use_browser_cookies = True
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO, use_cookies=False)
+        assert "--cookies" not in cmd
+        assert "--cookies-from-browser" not in cmd
+
+
+class TestFormatErrorDetection:
+    @pytest.mark.parametrize("err,expected", [
+        ("ERROR: Requested format is not available", True),
+        ("ERROR: Unable to extract player response", True),
+        ("ERROR: no video formats found", True),
+        ("ERROR: Private video", False),
+        ("ERROR: HTTP Error 404", False),
+        ("", False),
+    ])
+    def test_is_format_error(self, err, expected):
+        assert YtDlpDownloader._is_format_error(err) is expected
+
     def test_cookies_file_used_when_present(self, dl, tmp_path):
         cookies = tmp_path / "cookies.txt"
         cookies.write_text("# Netscape HTTP Cookie File\n")
@@ -293,6 +315,47 @@ class TestDownloadTimeout:
         assert result.success is False
         assert "timed out" in result.error.lower()
         assert proc.killed is True
+
+
+class TestCookieFallback:
+    async def test_retries_without_cookies_on_format_error(self, dl, tmp_path, monkeypatch):
+        from src.downloaders.ytdlp import DownloadResult
+        cookies = tmp_path / "c.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        dl.settings.cookies_file = str(cookies)
+        dl.settings.use_browser_cookies = False
+
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            if len(calls) == 1:
+                return DownloadResult(success=False, platform=platform,
+                                      error="ERROR: Requested format is not available")
+            return DownloadResult(success=True, output_path=tmp_path / "x.mp4", platform=platform)
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://youtu.be/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is True
+        assert len(calls) == 2
+        assert "--cookies" in calls[0]       # first try used cookies
+        assert "--cookies" not in calls[1]   # retry dropped them
+
+    async def test_no_retry_without_cookies_configured(self, dl, tmp_path, monkeypatch):
+        from src.downloaders.ytdlp import DownloadResult
+        dl.settings.cookies_file = ""
+        dl.settings.use_browser_cookies = False
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            return DownloadResult(success=False, platform=platform,
+                                  error="ERROR: Requested format is not available")
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://youtu.be/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is False
+        assert len(calls) == 1  # nothing to retry without
 
 
 class TestGetFormats:
