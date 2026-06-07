@@ -40,6 +40,8 @@ class DownloadTask:
     output_path: Optional[Path] = None
     file_size: int = 0
     error_message: str = ""
+    # Optional max video height (e.g. 720) from the inline quality picker.
+    max_height: Optional[int] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: datetime = field(default_factory=datetime.now)

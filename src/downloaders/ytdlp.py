@@ -235,6 +235,7 @@ class YtDlpDownloader:
         output_dir: Path,
         preferred_format: MediaFormat = MediaFormat.AUTO,
         progress_callback: Optional[callable] = None,
+        max_height: Optional[int] = None,
     ) -> DownloadResult:
         """
         Download media from URL.
@@ -244,6 +245,7 @@ class YtDlpDownloader:
             output_dir: Directory to save downloaded file
             preferred_format: Preferred media format (video/audio/auto)
             progress_callback: Optional callback for progress updates
+            max_height: Optional max video height (e.g. 720) from the picker
 
         Returns:
             DownloadResult with success status and file info.
@@ -256,7 +258,7 @@ class YtDlpDownloader:
         logger.info(f"Starting download", platform=platform, url=url[:80])
 
         # Build and run; on a geo-restriction failure, retry once via the proxy.
-        cmd = self._build_command(url, output_dir, effective_format)
+        cmd = self._build_command(url, output_dir, effective_format, max_height=max_height)
         result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
         if (
@@ -268,7 +270,8 @@ class YtDlpDownloader:
                 "Geo-restriction detected — retrying via proxy", platform=platform
             )
             cmd = self._build_command(
-                url, output_dir, effective_format, proxy=self.settings.proxy_url
+                url, output_dir, effective_format, proxy=self.settings.proxy_url,
+                max_height=max_height,
             )
             result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
@@ -454,12 +457,24 @@ class YtDlpDownloader:
             return MediaFormat.AUDIO
         return preferred
 
+    @staticmethod
+    def _video_selector(max_height: Optional[int]) -> str:
+        """yt-dlp -f selector for video, optionally capped to a max height."""
+        if max_height:
+            h = f"[height<=?{max_height}]"
+            return (
+                f"bestvideo{h}[ext=mp4]+bestaudio[ext=m4a]/"
+                f"bestvideo{h}+bestaudio/best{h}/best"
+            )
+        return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best"
+
     def _build_command(
         self,
         url: str,
         output_dir: Path,
         preferred_format: MediaFormat,
         proxy: Optional[str] = None,
+        max_height: Optional[int] = None,
     ) -> List[str]:
         """Build yt-dlp command with appropriate options."""
         cmd = ["yt-dlp", "--no-playlist"]
@@ -499,7 +514,7 @@ class YtDlpDownloader:
             # atom up front, letting Telegram play it inline rather than as a
             # downloadable file.
             cmd.extend([
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best",
+                "-f", self._video_selector(max_height),
                 "--merge-output-format", "mp4",
                 "--recode-video", "mp4",
                 "--postprocessor-args", "ffmpeg:-movflags +faststart",

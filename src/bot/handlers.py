@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import uuid
 from typing import Optional
 
 from aiogram import Bot, types
@@ -45,6 +46,46 @@ class BotHandlers:
         # task_id -> the background asyncio.Task running the download, so /cancel
         # can actually stop in-flight work (not just flip a status flag).
         self._running_tasks: dict[str, asyncio.Task] = {}
+        # short token -> URL, for the inline quality picker (callback_data is
+        # capped at 64 bytes, so the URL can't ride along in it).
+        self._pending: dict[str, str] = {}
+
+    def stash_url(self, url: str) -> str:
+        """Store a URL for the quality picker and return a short token."""
+        if len(self._pending) > 500:  # crude bound; tokens are short-lived
+            self._pending.clear()
+        token = uuid.uuid4().hex[:10]
+        self._pending[token] = url
+        return token
+
+    async def on_quality_choice(self, callback) -> None:
+        """Handle an inline quality-picker button press."""
+        from .quality import is_valid_choice, quality_params
+
+        data = callback.data or ""
+        parts = data.split(":")  # q:<token>:<choice>
+        token = parts[1] if len(parts) > 1 else ""
+        choice = parts[2] if len(parts) > 2 else ""
+        url = self._pending.pop(token, None)
+
+        if not url or not is_valid_choice(choice):
+            await callback.answer("This picker has expired — send the link again.", show_alert=True)
+            return
+
+        await callback.answer()
+        preferred_format, max_height = quality_params(choice)
+        label = f"{max_height}p" if max_height else preferred_format.value
+        try:
+            await callback.message.edit_text(f"✅ Selected: {label}")
+        except TelegramAPIError:
+            pass
+        await self.enqueue_download(
+            chat_id=callback.message.chat.id,
+            user_id=callback.from_user.id,
+            url=url,
+            preferred_format=preferred_format,
+            max_height=max_height,
+        )
 
     def get_user_state(self, user_id: int) -> DownloadState:
         """Get or create user state."""
@@ -62,43 +103,54 @@ class BotHandlers:
         return [u.rstrip(".,;:!?") for u in urls if len(u) < 2048]
 
     async def process_download(self, message: types.Message, url: str):
-        """Process a download request."""
-        user_id = message.from_user.id
-        user_state = self.get_user_state(user_id)
-
-        logger.info(
-            "Download request received",
-            user_id=user_id,
-            url=url[:80],
-        )
-
-        # Validate URL
-        if not self.downloader.validate_url(url):
-            await message.answer("❌ Invalid URL. Please provide a valid media URL.")
-            return
-
-        # Detect platform
-        platform = self.downloader.detect_platform(url)
-
-        # Add to queue
-        task, error = await self.queue.add_task(
-            user_id=user_id,
+        """Process a download request from a plain URL message."""
+        user_state = self.get_user_state(message.from_user.id)
+        await self.enqueue_download(
+            chat_id=message.chat.id,
+            user_id=message.from_user.id,
             url=url,
             preferred_format=user_state.preferred_format,
         )
 
+    async def enqueue_download(
+        self,
+        chat_id: int,
+        user_id: int,
+        url: str,
+        preferred_format: MediaFormat,
+        max_height: Optional[int] = None,
+    ):
+        """Validate, queue, acknowledge, and spawn a background download.
+
+        Shared by the plain-URL path and the inline quality picker.
+        """
+        logger.info("Download request received", user_id=user_id, url=url[:80])
+
+        if not self.downloader.validate_url(url):
+            await self.bot.send_message(chat_id, "❌ Invalid URL. Please provide a valid media URL.")
+            return
+
+        platform = self.downloader.detect_platform(url)
+
+        task, error = await self.queue.add_task(
+            user_id=user_id,
+            url=url,
+            preferred_format=preferred_format,
+            max_height=max_height,
+        )
         if not task:
-            await message.answer(f"❌ {error}")
+            await self.bot.send_message(chat_id, f"❌ {error}")
             return
 
         task.platform = platform
 
-        # Acknowledge
-        status_msg = await message.answer(
+        quality = f"{max_height}p" if max_height else preferred_format.value
+        status_msg = await self.bot.send_message(
+            chat_id,
             f"⏳ Queued download...\n"
             f"Platform: {platform}\n"
             f"Task ID: `{task.task_id}`\n"
-            f"Format: {user_state.preferred_format.value}",
+            f"Quality: {quality}",
             parse_mode="Markdown",
         )
 
@@ -106,7 +158,7 @@ class BotHandlers:
 
         # Process download in background; keep a handle so /cancel can stop it.
         bg = asyncio.create_task(
-            self._process_download_task(task, message.chat.id, status_msg.message_id)
+            self._process_download_task(task, chat_id, status_msg.message_id)
         )
         self._running_tasks[task.task_id] = bg
         bg.add_done_callback(
@@ -195,6 +247,7 @@ class BotHandlers:
                 output_dir=temp_dir,
                 preferred_format=task.preferred_format,
                 progress_callback=on_progress,
+                max_height=task.max_height,
             )
 
             if not result.success:

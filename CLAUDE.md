@@ -38,7 +38,8 @@ Tests live in `tests/` and cover the pure-logic units (config parsing, sanitizat
 Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → handler → queue → `yt-dlp` → uploader → cleanup.
 
 - `main.py` — entry point. Builds `Bot`/`Dispatcher`, wires graceful shutdown, starts polling. Chooses local-API-server session vs. standard API based on `API_SERVER_URL`.
-- `src/bot/router.py` — `create_router()` builds the `Dispatcher`, registers the **auth middleware** (`outer_middleware` on `dp.message`) and all command/text handlers.
+- `src/bot/router.py` — `create_router()` builds the `Dispatcher`, registers the **auth middleware** (`outer_middleware` on `dp.message` and `dp.callback_query`), all command/text handlers, and the `q:`-prefixed callback for the inline quality picker.
+- `src/bot/quality.py` — inline quality-picker choices (`QUALITY_CHOICES`) and `quality_params()` mapping each to `(MediaFormat, max_height)`. `/formats` renders these as buttons; `BotHandlers.on_quality_choice` resolves the tapped token (`stash_url`/`_pending`) and calls `enqueue_download`.
 - `src/bot/handlers.py` — `BotHandlers`: URL extraction, queueing, the background download→upload→cleanup task, status-message editing.
 - `src/commands/handlers.py` — `CommandHandlers`: `/start /help /audio /video /cancel /status /formats`.
 - `src/config/settings.py` — `Settings` dataclass loaded once from env (`get_settings()` singleton). All config flows through here.

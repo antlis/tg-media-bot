@@ -199,7 +199,7 @@ Send the bot any media **URL** (or up to 3 URLs in one message) and it downloads
 | `/help` | Show help and the list of supported platforms |
 | `/audio` | Switch to audio-only mode — downloads are converted to MP3 |
 | `/video` | Switch to video mode (default) — includes video when available |
-| `/formats <url>` | List the available download formats for a URL |
+| `/formats <url>` | Show inline buttons to pick a download quality (Best / 1080p / 720p / 480p / Audio) |
 | `/status` | Show your queued/active downloads and their task IDs |
 | `/cancel <task_id>` | Cancel one of your active downloads (get the ID from `/status`) |
 
