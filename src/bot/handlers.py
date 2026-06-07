@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramAPIError
 
 from ..config import get_settings
 from ..downloaders import YtDlpDownloader
-from ..downloaders.ytdlp import render_progress_bar
+from ..downloaders.ytdlp import friendly_error, render_progress_bar
 from ..queue import get_queue_manager
 from ..services.cleanup import get_cleanup_service
 from ..services.media_cache import get_media_cache
@@ -253,7 +253,7 @@ class BotHandlers:
             if not result.success:
                 await self._update_status_message(
                     chat_id, status_msg_id,
-                    f"❌ Download failed\n\n{result.error[:500]}"
+                    f"❌ Download failed\n\n{friendly_error(result.error)}"
                 )
                 self.queue.update_task_status(
                     task.task_id,

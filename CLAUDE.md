@@ -55,6 +55,10 @@ Request flow: Telegram → `dp` (aiogram Dispatcher) → `auth_middleware` → h
 
 `YtDlpDownloader._cookie_args()` centralizes cookie flags: a `COOKIES_FILE` (when the file exists) wins over `--cookies-from-browser`; used by both `get_info()` and `_build_command()`.
 
+`friendly_error()` (in `ytdlp.py`) maps raw yt-dlp stderr to short actionable hints (age-restricted → cookies, region block → proxy, etc.); the download handler shows it on failure while the raw error is still logged.
+
+In Docker, `docker-entrypoint.sh` refreshes yt-dlp (`pip install -U`, best-effort) on container start unless `YTDLP_AUTO_UPDATE=false`, then launches the bot — so site breakages are fixed without an image rebuild.
+
 **Live progress:** downloads run with `--newline --progress-template "download:PROG|…"`; `_run_download` streams stdout via `_stream()`, parses `PROG|` lines (`parse_progress_line`), and invokes the `progress_callback` at most once per `_PROGRESS_MIN_INTERVAL` (always on 100%). `BotHandlers._process_download_task` passes a callback that edits the status message with `render_progress_bar`. Only the download phase has progress — the Bot API exposes no upload-progress callback.
 
 ## Conventions
