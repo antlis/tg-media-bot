@@ -21,6 +21,12 @@ logger = get_logger()
 # DOWNLOAD_TIMEOUT, which bounds the whole yt-dlp run.
 _SOCKET_TIMEOUT = 60
 
+# Extra attempts for a transient connectivity error before giving up (or
+# falling back to a proxy). Each attempt is a fresh yt-dlp process, so it
+# re-resolves DNS from scratch — useful when a site resolves to a pool of
+# several IPs and only some of them are actually reachable.
+_CONNECTIVITY_RETRY_ATTEMPTS = 3
+
 # Live-progress wiring. yt-dlp prints one PROG line per update (--newline +
 # --progress-template); we parse it and throttle callbacks so message edits
 # stay well under Telegram's rate limit.
@@ -321,13 +327,23 @@ class YtDlpDownloader:
                 result = retry
 
         # Transient connectivity failures (a handshake stall, a reset, a
-        # momentary drop) often clear up on their own — worth one bare retry
-        # on the same path before reaching for a proxy.
-        if not result.success and self._is_connectivity_error(result.error):
-            logger.info("Transient connectivity error — retrying once", platform=platform)
-            retry = await self._run_download(cmd, output_dir, platform, progress_callback)
-            if retry.success:
-                result = retry
+        # momentary drop) often clear up on their own — a site can resolve to
+        # a pool of several IPs where only some are actually reachable, and
+        # each fresh attempt re-resolves DNS and gets an independent shot at
+        # a working one. Worth a few bare retries on the same path before
+        # reaching for a proxy.
+        attempt = 0
+        while (
+            not result.success
+            and self._is_connectivity_error(result.error)
+            and attempt < _CONNECTIVITY_RETRY_ATTEMPTS
+        ):
+            attempt += 1
+            logger.info(
+                f"Transient connectivity error — retrying ({attempt}/{_CONNECTIVITY_RETRY_ATTEMPTS})",
+                platform=platform,
+            )
+            result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
         if (
             not result.success
@@ -642,14 +658,22 @@ class YtDlpDownloader:
                 "-f", self._video_selector(max_height),
                 "--merge-output-format", "mp4",
                 "--recode-video", "mp4",
-                "--postprocessor-args", "ffmpeg:-movflags +faststart",
+                # Scoped to the video-recode postprocessor specifically — a
+                # bare "ffmpeg:" key applies to *every* ffmpeg postprocessor
+                # yt-dlp runs, including the unrelated thumbnail-to-jpg
+                # conversion below, where an mp4-only muxer flag like
+                # -movflags has no business being and can make it choke.
+                "--postprocessor-args", "VideoConvertor:-movflags +faststart",
             ])
 
-        # Post-processing for thumbnails
-        cmd.extend([
-            "--write-thumbnail",
-            "--convert-thumbnails", "jpg",
-        ])
+        # Write the raw thumbnail as-is. Deliberately NOT using
+        # --convert-thumbnails: yt-dlp's own converter unconditionally forces
+        # ffmpeg's "-f image2" demuxer on the input, which can't parse AVIF
+        # thumbnails (an ISOBMFF/AV1 container, not a raw image2 bitstream)
+        # and fails with "Error opening output files: Invalid argument".
+        # _prepare_thumbnail() in uploader.py does its own plain, format-
+        # agnostic ffmpeg conversion downstream instead.
+        cmd.append("--write-thumbnail")
 
         # Per-connection network stall timeout
         cmd.extend([
@@ -697,7 +721,7 @@ class YtDlpDownloader:
         if not directory.exists():
             return None
 
-        thumb_extensions = (".jpg", ".jpeg", ".png", ".webp")
+        thumb_extensions = (".jpg", ".jpeg", ".png", ".webp", ".avif")
         thumbs = [
             f for f in directory.iterdir()
             if f.is_file() and f.suffix.lower() in thumb_extensions
@@ -705,7 +729,9 @@ class YtDlpDownloader:
         if not thumbs:
             return None
 
-        # Prefer jpg (yt-dlp converts to jpg via --convert-thumbnails)
+        # Prefer jpg when there's a choice; _prepare_thumbnail() converts
+        # whatever we hand it (raw source format, since we don't ask yt-dlp
+        # to convert — see _build_command).
         thumbs.sort(key=lambda f: (f.suffix.lower() != ".jpg", f.name))
         return thumbs[0]
 

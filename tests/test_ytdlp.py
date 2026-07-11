@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+import src.downloaders.ytdlp as ytdlp_module
 from src.downloaders.ytdlp import (
     YtDlpDownloader,
     friendly_error,
@@ -87,12 +88,12 @@ class TestBuildCommand:
         # Direct .webm URLs etc. must be transcoded so Telegram plays them inline
         cmd = dl._build_command("https://x", tmp_path, MediaFormat.VIDEO)
         assert "--recode-video" in cmd
-        assert "ffmpeg:-movflags +faststart" in cmd
+        assert "VideoConvertor:-movflags +faststart" in cmd
 
     def test_auto_recodes_for_inline_playback(self, dl, tmp_path):
         cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO)
         assert "--recode-video" in cmd
-        assert "ffmpeg:-movflags +faststart" in cmd
+        assert "VideoConvertor:-movflags +faststart" in cmd
 
     def test_cookies_added_when_enabled(self, dl, tmp_path):
         dl.settings.use_browser_cookies = True
@@ -207,6 +208,12 @@ class TestFileDiscovery:
     def test_find_thumbnail_none(self, dl, tmp_path):
         (tmp_path / "only.mp3").write_bytes(b"x")
         assert dl._find_thumbnail(tmp_path) is None
+
+    def test_find_thumbnail_finds_avif(self, dl, tmp_path):
+        # Raw source format — we don't ask yt-dlp to convert (see
+        # _build_command); _prepare_thumbnail() converts it downstream.
+        (tmp_path / "a.avif").write_bytes(b"x")
+        assert dl._find_thumbnail(tmp_path).suffix == ".avif"
 
     def test_read_info_json(self, dl, tmp_path):
         data = {"title": "T", "artist": "A", "duration": 100}
@@ -421,15 +428,18 @@ class TestProxyFallback:
         assert len(calls) == 2
         assert "--proxy" not in calls[1]
 
-    async def test_retries_via_proxy_when_bare_retry_also_fails(self, dl, tmp_path, monkeypatch):
+    async def test_retries_via_proxy_when_bare_retries_also_fail(self, dl, tmp_path, monkeypatch):
         from src.downloaders.ytdlp import DownloadResult
         dl.settings.proxy_url = "socks5h://127.0.0.1:9999"
 
         calls = []
+        # initial attempt + _CONNECTIVITY_RETRY_ATTEMPTS bare retries all fail,
+        # only the proxied attempt after that succeeds.
+        bare_attempts = 1 + ytdlp_module._CONNECTIVITY_RETRY_ATTEMPTS
 
         async def fake_run(cmd, output_dir, platform, cb=None):
             calls.append(cmd)
-            if len(calls) <= 2:
+            if len(calls) <= bare_attempts:
                 return DownloadResult(
                     success=False, platform=platform,
                     error="_ssl.c:993: The handshake operation timed out",
@@ -439,11 +449,11 @@ class TestProxyFallback:
         monkeypatch.setattr(dl, "_run_download", fake_run)
         res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
         assert res.success is True
-        assert len(calls) == 3
-        assert "--proxy" not in calls[0]
-        assert "--proxy" not in calls[1]
-        assert "--proxy" in calls[2]
-        assert dl.settings.proxy_url in calls[2]
+        assert len(calls) == bare_attempts + 1
+        for c in calls[:bare_attempts]:
+            assert "--proxy" not in c
+        assert "--proxy" in calls[-1]
+        assert dl.settings.proxy_url in calls[-1]
 
     async def test_no_proxy_retry_without_proxy_configured(self, dl, tmp_path, monkeypatch):
         from src.downloaders.ytdlp import DownloadResult
@@ -460,7 +470,8 @@ class TestProxyFallback:
         monkeypatch.setattr(dl, "_run_download", fake_run)
         res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
         assert res.success is False
-        assert len(calls) == 2  # initial attempt + one bare retry, no proxy to fall back to
+        # initial attempt + all bare retries exhausted, no proxy to fall back to
+        assert len(calls) == 1 + ytdlp_module._CONNECTIVITY_RETRY_ATTEMPTS
 
     async def test_no_retry_on_unrelated_error(self, dl, tmp_path, monkeypatch):
         from src.downloaders.ytdlp import DownloadResult
