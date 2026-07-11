@@ -1,5 +1,7 @@
 # Secrets
 .env
+.env.bak*
+cookies/
 
 # Python bytecode
 __pycache__/
