@@ -14,7 +14,6 @@ from typing import Callable, List, Optional, Tuple
 from ..config import get_settings
 from ..types.download import MediaFormat
 from ..utils.logger import get_logger
-from ..utils.sanitizer import sanitize_filename
 
 logger = get_logger()
 
@@ -321,13 +320,23 @@ class YtDlpDownloader:
             if retry.success:
                 result = retry
 
+        # Transient connectivity failures (a handshake stall, a reset, a
+        # momentary drop) often clear up on their own — worth one bare retry
+        # on the same path before reaching for a proxy.
+        if not result.success and self._is_connectivity_error(result.error):
+            logger.info("Transient connectivity error — retrying once", platform=platform)
+            retry = await self._run_download(cmd, output_dir, platform, progress_callback)
+            if retry.success:
+                result = retry
+
         if (
             not result.success
             and self.settings.proxy_url
-            and self._is_geo_blocked(result.error)
+            and self._is_proxy_worthy(result.error)
         ):
             logger.info(
-                "Geo-restriction detected — retrying via proxy", platform=platform
+                "Geo-restriction or connectivity block detected — retrying via proxy",
+                platform=platform,
             )
             cmd = self._build_command(
                 url, output_dir, effective_format, proxy=self.settings.proxy_url,
@@ -348,10 +357,34 @@ class YtDlpDownloader:
         "blocked it in your country",
     )
 
+    # Substrings indicating the connection itself was blocked/dropped (ISP
+    # filtering, anti-bot IP blocks, etc.) rather than a normal transient
+    # network hiccup — worth one retry through the proxy, same as a geo-block.
+    _CONNECTIVITY_MARKERS = (
+        "handshake operation timed out",
+        "connection refused",
+        "network is unreachable",
+        "unable to download webpage",
+        "unable to connect to proxy",
+        "connection reset by peer",
+    )
+
     def _is_geo_blocked(self, error: str) -> bool:
         """True if the failure looks like a country/region licensing block."""
         e = (error or "").lower()
         return any(m in e for m in self._GEO_MARKERS)
+
+    def _is_connectivity_error(self, error: str) -> bool:
+        """True if the failure looks like a transient connection/handshake
+        problem (as opposed to a definitive geo/content block) — worth a bare
+        retry on the same path before trying a proxy."""
+        e = (error or "").lower()
+        return any(m in e for m in self._CONNECTIVITY_MARKERS)
+
+    def _is_proxy_worthy(self, error: str) -> bool:
+        """True if a proxied retry is likely to help: an explicit geo-block,
+        or the connection to the site itself being blocked/dropped."""
+        return self._is_geo_blocked(error) or self._is_connectivity_error(error)
 
     @staticmethod
     def _is_format_error(error: str) -> bool:
@@ -563,7 +596,12 @@ class YtDlpDownloader:
         use_cookies: bool = True,
     ) -> List[str]:
         """Build yt-dlp command with appropriate options."""
-        cmd = ["yt-dlp", "--no-playlist"]
+        # --restrict-filenames: ASCII-only, no spaces/special chars in the
+        # %(title)s-derived output filename. Some titles contain characters
+        # (e.g. a literal "%") that make ffmpeg's own file writer choke with
+        # "Error opening output files: Invalid argument" during the
+        # --recode-video/--movflags postprocessing step.
+        cmd = ["yt-dlp", "--no-playlist", "--restrict-filenames"]
 
         # Route through a proxy (used only for the geo-restriction fallback retry)
         if proxy:

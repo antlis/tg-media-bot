@@ -153,6 +153,31 @@ class TestFormatErrorDetection:
         assert "--cookies-from-browser" in cmd
 
 
+class TestProxyWorthy:
+    @pytest.mark.parametrize("err,expected", [
+        ("ERROR: blocked it in your country", True),
+        ("ERROR: not available in your country", True),
+        ("_ssl.c:993: The handshake operation timed out", True),
+        ("ERROR: [Foo] x: Unable to download webpage: <urlopen error timed out>", True),
+        ("ConnectionResetError: Connection reset by peer", True),
+        ("ERROR: Private video", False),
+        ("ERROR: Requested format is not available", False),
+        ("", False),
+    ])
+    def test_is_proxy_worthy(self, dl, err, expected):
+        assert dl._is_proxy_worthy(err) is expected
+
+    @pytest.mark.parametrize("err,expected", [
+        ("_ssl.c:993: The handshake operation timed out", True),
+        ("ConnectionResetError: Connection reset by peer", True),
+        ("ERROR: blocked it in your country", False),  # geo-block, not transient
+        ("ERROR: Private video", False),
+        ("", False),
+    ])
+    def test_is_connectivity_error(self, dl, err, expected):
+        assert dl._is_connectivity_error(err) is expected
+
+
 class TestEffectiveFormat:
     def test_soundcloud_forced_to_audio(self, dl):
         assert dl._effective_format("soundcloud", MediaFormat.AUTO) == MediaFormat.AUDIO
@@ -370,6 +395,86 @@ class TestCookieFallback:
         res = await dl.download("https://youtu.be/x", tmp_path, MediaFormat.AUTO)
         assert res.success is False
         assert len(calls) == 1  # nothing to retry without
+
+
+class TestProxyFallback:
+    async def test_bare_retry_recovers_from_transient_connectivity_error(
+        self, dl, tmp_path, monkeypatch
+    ):
+        """A handshake stall etc. often clears up immediately — no proxy needed."""
+        from src.downloaders.ytdlp import DownloadResult
+        dl.settings.proxy_url = None
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            if len(calls) == 1:
+                return DownloadResult(
+                    success=False, platform=platform,
+                    error="_ssl.c:993: The handshake operation timed out",
+                )
+            return DownloadResult(success=True, output_path=tmp_path / "x.mp4", platform=platform)
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is True
+        assert len(calls) == 2
+        assert "--proxy" not in calls[1]
+
+    async def test_retries_via_proxy_when_bare_retry_also_fails(self, dl, tmp_path, monkeypatch):
+        from src.downloaders.ytdlp import DownloadResult
+        dl.settings.proxy_url = "socks5h://127.0.0.1:9999"
+
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            if len(calls) <= 2:
+                return DownloadResult(
+                    success=False, platform=platform,
+                    error="_ssl.c:993: The handshake operation timed out",
+                )
+            return DownloadResult(success=True, output_path=tmp_path / "x.mp4", platform=platform)
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is True
+        assert len(calls) == 3
+        assert "--proxy" not in calls[0]
+        assert "--proxy" not in calls[1]
+        assert "--proxy" in calls[2]
+        assert dl.settings.proxy_url in calls[2]
+
+    async def test_no_proxy_retry_without_proxy_configured(self, dl, tmp_path, monkeypatch):
+        from src.downloaders.ytdlp import DownloadResult
+        dl.settings.proxy_url = None
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            return DownloadResult(
+                success=False, platform=platform,
+                error="_ssl.c:993: The handshake operation timed out",
+            )
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is False
+        assert len(calls) == 2  # initial attempt + one bare retry, no proxy to fall back to
+
+    async def test_no_retry_on_unrelated_error(self, dl, tmp_path, monkeypatch):
+        from src.downloaders.ytdlp import DownloadResult
+        dl.settings.proxy_url = "socks5h://127.0.0.1:9999"
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            return DownloadResult(success=False, platform=platform, error="ERROR: Video unavailable")
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is False
+        assert len(calls) == 1  # unrelated failure shouldn't trigger any retry
 
 
 class TestGetFormats:
