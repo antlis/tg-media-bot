@@ -60,6 +60,7 @@ def create_router(bot: Bot) -> Dispatcher:
     dp.message.register(cmd_cancel, Command("cancel"))
     dp.message.register(cmd_status, Command("status"))
     dp.message.register(cmd_formats, Command("formats"))
+    dp.message.register(cmd_minimal, Command("minimal"))
 
     # Inline quality-picker button presses
     @dp.callback_query(lambda c: (c.data or "").startswith("q:"))
@@ -127,3 +128,10 @@ async def cmd_formats(message, bot: Bot):
     from ..commands import CommandHandlers
     ch = CommandHandlers(bot)
     await ch.cmd_formats(message)
+
+
+async def cmd_minimal(message, bot: Bot):
+    """Handle /minimal command."""
+    from ..commands import CommandHandlers
+    ch = CommandHandlers(bot)
+    await ch.cmd_minimal(message)

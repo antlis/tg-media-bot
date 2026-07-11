@@ -57,6 +57,10 @@ class Settings:
     # re-downloaded. Empty = in-memory only (not saved).
     cache_file: str = ""
 
+    # Optional path to a JSON file persisting chat IDs with minimal UI mode
+    # enabled (toggled via /minimal). Empty = in-memory only (not saved).
+    minimal_mode_file: str = ""
+
     # Optional proxy for yt-dlp. Only used as a fallback when a download fails
     # with a geo/region block (e.g. media that's licensed only in some regions).
     # Format: socks5h://user:pass@host:port  (or http://...)
@@ -123,5 +127,6 @@ def _load_settings() -> Settings:
         cookies_file=os.getenv("COOKIES_FILE", ""),
         allowed_chats_file=os.getenv("ALLOWED_CHATS_FILE", ""),
         cache_file=os.getenv("MEDIA_CACHE_FILE", ""),
+        minimal_mode_file=os.getenv("MINIMAL_MODE_FILE", ""),
         proxy_url=os.getenv("PROXY_URL") or None,
     )

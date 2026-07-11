@@ -116,6 +116,7 @@ class UploaderService:
         thumbnail_path: Optional[Path] = None,
         reply_to_message_id: Optional[int] = None,
         supports_streaming: bool = True,
+        minimal: bool = False,
     ) -> Optional[Message]:
         """
         Upload a video to Telegram.
@@ -129,6 +130,7 @@ class UploaderService:
             thumbnail_path: Optional poster image shown before playback
             reply_to_message_id: Optional message to reply to
             supports_streaming: Enable streaming for large videos
+            minimal: If True, send with no caption (minimal UI mode)
 
         Returns:
             Sent message or None on failure
@@ -145,7 +147,7 @@ class UploaderService:
             message = await self.bot.send_video(
                 chat_id=chat_id,
                 video=input_file,
-                caption=_build_caption(caption, source_url),
+                caption=None if minimal else _build_caption(caption, source_url),
                 parse_mode="HTML",
                 duration=int(duration) if duration else None,
                 thumbnail=InputFile(thumb) if thumb else None,
@@ -170,6 +172,7 @@ class UploaderService:
                 caption=caption,
                 source_url=source_url,
                 reply_to_message_id=reply_to_message_id,
+                minimal=minimal,
             )
 
     async def upload_audio(
@@ -183,6 +186,7 @@ class UploaderService:
         thumbnail_path: Optional[Path] = None,
         source_url: Optional[str] = None,
         reply_to_message_id: Optional[int] = None,
+        minimal: bool = False,
     ) -> Optional[Message]:
         """
         Upload an audio file to Telegram.
@@ -197,6 +201,8 @@ class UploaderService:
             thumbnail_path: Optional cover-art image to attach
             source_url: Original media URL, shown as plain text in the caption
             reply_to_message_id: Optional message to reply to
+            minimal: If True, send with no caption (minimal UI mode); the
+                title/performer/cover-art player metadata are kept regardless
 
         Returns:
             Sent message or None on failure
@@ -216,7 +222,7 @@ class UploaderService:
             message = await self.bot.send_audio(
                 chat_id=chat_id,
                 audio=input_file,
-                caption=_build_caption(caption, source_url),
+                caption=None if minimal else _build_caption(caption, source_url),
                 parse_mode="HTML",
                 title=title,
                 performer=performer,
@@ -245,6 +251,7 @@ class UploaderService:
         caption: str = "",
         source_url: Optional[str] = None,
         reply_to_message_id: Optional[int] = None,
+        minimal: bool = False,
     ) -> Optional[Message]:
         """
         Upload a file as document.
@@ -255,6 +262,7 @@ class UploaderService:
             caption: Optional caption (title text)
             source_url: Original media URL, shown as plain text in the caption
             reply_to_message_id: Optional message to reply to
+            minimal: If True, send with no caption (minimal UI mode)
 
         Returns:
             Sent message or None on failure
@@ -269,7 +277,7 @@ class UploaderService:
             message = await self.bot.send_document(
                 chat_id=chat_id,
                 document=input_file,
-                caption=_build_caption(caption, source_url),
+                caption=None if minimal else _build_caption(caption, source_url),
                 parse_mode="HTML",
                 reply_to_message_id=reply_to_message_id,
             )
@@ -297,6 +305,7 @@ class UploaderService:
         thumbnail_path: Optional[Path] = None,
         source_url: Optional[str] = None,
         reply_to_message_id: Optional[int] = None,
+        minimal: bool = False,
     ) -> Optional[Message]:
         """
         Upload media based on format preference.
@@ -313,6 +322,7 @@ class UploaderService:
             thumbnail_path: Optional cover art (audio only)
             source_url: Original media URL, shown as plain text in the caption
             reply_to_message_id: Optional message to reply to
+            minimal: If True, send with no caption (minimal UI mode)
 
         Returns:
             Sent message or None on failure
@@ -333,6 +343,7 @@ class UploaderService:
                 thumbnail_path=thumbnail_path,
                 source_url=source_url,
                 reply_to_message_id=reply_to_message_id,
+                minimal=minimal,
             )
 
         # Video formats
@@ -347,6 +358,7 @@ class UploaderService:
                 duration=duration,
                 thumbnail_path=thumbnail_path,
                 reply_to_message_id=reply_to_message_id,
+                minimal=minimal,
             )
 
         # Default to document for unknown formats
@@ -356,6 +368,7 @@ class UploaderService:
             caption=title,
             source_url=source_url,
             reply_to_message_id=reply_to_message_id,
+            minimal=minimal,
         )
 
     async def send_cached(
@@ -364,6 +377,7 @@ class UploaderService:
         entry: dict,
         source_url: Optional[str] = None,
         reply_to_message_id: Optional[int] = None,
+        minimal: bool = False,
     ) -> Optional[Message]:
         """Resend a previously uploaded file by its cached file_id (instant).
 
@@ -372,7 +386,7 @@ class UploaderService:
         """
         kind = entry["kind"]
         file_id = entry["file_id"]
-        caption = _build_caption(entry.get("title", ""), source_url)
+        caption = None if minimal else _build_caption(entry.get("title", ""), source_url)
         duration = int(entry["duration"]) if entry.get("duration") else None
 
         if kind == "audio":

@@ -15,6 +15,7 @@ from ..downloaders.ytdlp import friendly_error, render_progress_bar
 from ..queue import get_queue_manager
 from ..services.cleanup import get_cleanup_service
 from ..services.media_cache import get_media_cache
+from ..services.minimal_store import get_minimal_store
 from ..services.uploader import UploaderService, cache_entry_from_message
 from ..types.download import DownloadStatus, MediaFormat
 from ..utils.logger import get_logger
@@ -44,6 +45,7 @@ class BotHandlers:
         self.queue = get_queue_manager()
         self.cleanup = get_cleanup_service()
         self.cache = get_media_cache()
+        self.minimal_store = get_minimal_store()
         self.downloader = YtDlpDownloader()
         self.uploader = UploaderService(bot)
         self._user_states: dict[int, DownloadState] = {}
@@ -148,21 +150,25 @@ class BotHandlers:
 
         task.platform = platform
 
-        quality = f"{max_height}p" if max_height else preferred_format.value
-        status_msg = await self.bot.send_message(
-            chat_id,
-            f"⏳ Queued download...\n"
-            f"Platform: {platform}\n"
-            f"Task ID: `{task.task_id}`\n"
-            f"Quality: {quality}",
-            parse_mode="Markdown",
-        )
+        minimal = self.minimal_store.contains(chat_id)
+        status_msg_id: Optional[int] = None
+        if not minimal:
+            quality = f"{max_height}p" if max_height else preferred_format.value
+            status_msg = await self.bot.send_message(
+                chat_id,
+                f"⏳ Queued download...\n"
+                f"Platform: {platform}\n"
+                f"Task ID: `{task.task_id}`\n"
+                f"Quality: {quality}",
+                parse_mode="Markdown",
+            )
+            status_msg_id = status_msg.message_id
 
         logger.download_started(user_id, url, platform, task.task_id)
 
         # Process download in background; keep a handle so /cancel can stop it.
         bg = asyncio.create_task(
-            self._process_download_task(task, chat_id, status_msg.message_id)
+            self._process_download_task(task, chat_id, status_msg_id, minimal)
         )
         self._running_tasks[task.task_id] = bg
         bg.add_done_callback(
@@ -183,8 +189,16 @@ class BotHandlers:
             bg.cancel()
         return True
 
-    async def _process_download_task(self, task, chat_id: int, status_msg_id: int):
-        """Background task to process a download."""
+    async def _process_download_task(
+        self, task, chat_id: int, status_msg_id: Optional[int], minimal: bool = False
+    ):
+        """Background task to process a download.
+
+        In minimal mode ``status_msg_id`` is None: routine progress/status
+        edits are skipped and the uploaded media carries no caption, but
+        failures are still reported (as a new message, since there's no
+        status message to edit).
+        """
         user_id = task.user_id
         user_state = self.get_user_state(user_id)
 
@@ -198,12 +212,15 @@ class BotHandlers:
             cached = self.cache.get(task.url, task.preferred_format.value)
             if cached:
                 try:
-                    msg = await self.uploader.send_cached(chat_id, cached, source_url=task.url)
+                    msg = await self.uploader.send_cached(
+                        chat_id, cached, source_url=task.url, minimal=minimal
+                    )
                     if msg:
-                        await self._update_status_message(
-                            chat_id, status_msg_id,
-                            f"✅ Sent (from cache).\nTask: `{task.task_id}`"
-                        )
+                        if status_msg_id is not None:
+                            await self._update_status_message(
+                                chat_id, status_msg_id,
+                                f"✅ Sent (from cache).\nTask: `{task.task_id}`"
+                            )
                         self.queue.update_task_status(task.task_id, DownloadStatus.COMPLETED)
                         logger.info("Served from cache", task_id=task.task_id, url=task.url[:80])
                         return
@@ -213,7 +230,7 @@ class BotHandlers:
                     self.cache.evict(task.url, task.preferred_format.value)
 
             # Wait for a global download slot (enforces MAX_PARALLEL_DOWNLOADS).
-            if self.queue.slots_busy():
+            if self.queue.slots_busy() and status_msg_id is not None:
                 await self._update_status_message(
                     chat_id, status_msg_id,
                     f"⏳ Waiting for a free download slot...\nTask: `{task.task_id}`"
@@ -227,14 +244,18 @@ class BotHandlers:
 
             # Update status
             task.status = DownloadStatus.DOWNLOADING
-            await self._update_status_message(
-                chat_id, status_msg_id,
-                f"📥 Downloading...\nTask: `{task.task_id}`"
-            )
+            if status_msg_id is not None:
+                await self._update_status_message(
+                    chat_id, status_msg_id,
+                    f"📥 Downloading...\nTask: `{task.task_id}`"
+                )
 
             # Live progress (edits the same status message, throttled in the
-            # downloader). Works the same in DMs and groups.
+            # downloader). Works the same in DMs and groups. No-op in minimal
+            # mode, where there's no status message to update.
             async def on_progress(info):
+                if status_msg_id is None:
+                    return
                 if info.get("stage") == "process":
                     await self._update_status_message(
                         chat_id, status_msg_id,
@@ -261,7 +282,7 @@ class BotHandlers:
             )
 
             if not result.success:
-                await self._update_status_message(
+                await self._notify_error(
                     chat_id, status_msg_id,
                     f"❌ Download failed\n\n{friendly_error(result.error)}"
                 )
@@ -280,8 +301,13 @@ class BotHandlers:
 
             # Upload. The Bot API exposes no upload-progress callback, so run a
             # heartbeat that shows elapsed time + size while it's in flight.
-            hb = asyncio.create_task(
-                self._upload_heartbeat(chat_id, status_msg_id, task.task_id, result.file_size)
+            # Skipped in minimal mode: no status message to update.
+            hb = (
+                asyncio.create_task(
+                    self._upload_heartbeat(chat_id, status_msg_id, task.task_id, result.file_size)
+                )
+                if status_msg_id is not None
+                else None
             )
             try:
                 upload_result = await self.uploader.upload_media(
@@ -293,17 +319,20 @@ class BotHandlers:
                     duration=result.duration,
                     thumbnail_path=result.thumbnail_path,
                     source_url=task.url,
+                    minimal=minimal,
                 )
             finally:
-                hb.cancel()
+                if hb is not None:
+                    hb.cancel()
 
             if upload_result:
-                await self._update_status_message(
-                    chat_id, status_msg_id,
-                    f"✅ Done!\n"
-                    f"{result.output_path.name}\n"
-                    f"Size: {result.file_size / (1024*1024):.1f}MB"
-                )
+                if status_msg_id is not None:
+                    await self._update_status_message(
+                        chat_id, status_msg_id,
+                        f"✅ Done!\n"
+                        f"{result.output_path.name}\n"
+                        f"Size: {result.file_size / (1024*1024):.1f}MB"
+                    )
                 self.queue.update_task_status(
                     task.task_id,
                     DownloadStatus.COMPLETED,
@@ -338,10 +367,7 @@ class BotHandlers:
                         error_msg += "Run the bundled Local Bot API Server to raise it to 2GB."
                 else:
                     error_msg += "Telegram rejected the file."
-                await self._update_status_message(
-                    chat_id, status_msg_id,
-                    error_msg,
-                )
+                await self._notify_error(chat_id, status_msg_id, error_msg)
                 self.queue.update_task_status(
                     task.task_id,
                     DownloadStatus.FAILED,
@@ -352,13 +378,9 @@ class BotHandlers:
             # /cancel: the download subprocess is killed downstream. Report and
             # re-raise so the cancellation isn't swallowed.
             self.queue.update_task_status(task.task_id, DownloadStatus.CANCELLED)
-            try:
-                await self._update_status_message(
-                    chat_id, status_msg_id,
-                    f"🚫 Cancelled.\nTask: `{task.task_id}`"
-                )
-            except TelegramAPIError:
-                pass
+            await self._notify_error(
+                chat_id, status_msg_id, f"🚫 Cancelled.\nTask: `{task.task_id}`"
+            )
             raise
 
         except Exception as e:
@@ -368,13 +390,7 @@ class BotHandlers:
                 DownloadStatus.FAILED,
                 error_message=str(e),
             )
-            try:
-                await self._update_status_message(
-                    chat_id, status_msg_id,
-                    f"❌ Error: {str(e)[:500]}"
-                )
-            except TelegramAPIError:
-                pass
+            await self._notify_error(chat_id, status_msg_id, f"❌ Error: {str(e)[:500]}")
 
         finally:
             # Release the global slot if we took one, then clean up temp files.
@@ -409,6 +425,18 @@ class BotHandlers:
                 text=text,
                 parse_mode="Markdown",
             )
+        except TelegramAPIError:
+            pass
+
+    async def _notify_error(self, chat_id: int, status_msg_id: Optional[int], text: str):
+        """Report a failure: edit the status message if one exists, else send
+        a new one. Failures are surfaced even in minimal mode, where there's
+        no status message to reuse."""
+        if status_msg_id is not None:
+            await self._update_status_message(chat_id, status_msg_id, text)
+            return
+        try:
+            await self.bot.send_message(chat_id, text, parse_mode="Markdown")
         except TelegramAPIError:
             pass
 

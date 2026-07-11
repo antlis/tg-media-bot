@@ -103,6 +103,7 @@ async def main():
             BotCommand(command="formats", description="Pick download quality for a URL"),
             BotCommand(command="status", description="Show your active downloads"),
             BotCommand(command="cancel", description="Cancel a download by task ID"),
+            BotCommand(command="minimal", description="Toggle minimal UI: on|off"),
         ])
         logger.info("Bot commands registered")
     except Exception as e:

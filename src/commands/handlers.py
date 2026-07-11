@@ -42,6 +42,7 @@ Send me any media URL and I'll download and send it back to you.
 /formats &lt;url&gt; - Pick a download quality (buttons)
 /cancel &lt;task_id&gt; - Cancel a download
 /status - Show your active downloads
+/minimal on|off - Toggle minimal UI (no status messages, no caption on media)
 
 <b>Supported Platforms:</b>
 """
@@ -120,6 +121,41 @@ Send me any media URL and I'll download and send it back to you.
         summary = self.queue.get_status_summary(user_id)
 
         await message.answer(f"📊 Your Downloads:\n\n{summary}")
+
+    async def cmd_minimal(self, message: types.Message):
+        """Handle /minimal command - toggle minimal UI mode for this chat.
+
+        In minimal mode, downloads produce no queued/progress/"Done!" status
+        messages and the uploaded media carries no title/source-URL caption —
+        just the file itself. Failures are still reported.
+        """
+        from ..services.minimal_store import get_minimal_store
+
+        store = get_minimal_store()
+        chat_id = message.chat.id
+        args = message.text.split()[1:] if len(message.text.split()) > 1 else []
+
+        if not args:
+            enabled = store.contains(chat_id)
+            await message.answer(
+                f"Minimal UI mode is currently {'ON' if enabled else 'OFF'} for this chat.\n"
+                "Usage: /minimal on|off"
+            )
+            return
+
+        choice = args[0].lower()
+        if choice not in ("on", "off"):
+            await message.answer("Usage: /minimal on|off")
+            return
+
+        store.set(chat_id, choice == "on")
+        if choice == "on":
+            await message.answer(
+                "🤫 Minimal UI mode enabled. Downloads will be sent with no "
+                "status messages and no caption."
+            )
+        else:
+            await message.answer("✅ Minimal UI mode disabled. Normal status messages and captions restored.")
 
     async def cmd_formats(self, message: types.Message):
         """Handle /formats — show an inline quality picker for a URL."""
