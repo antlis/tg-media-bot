@@ -387,6 +387,38 @@ class TestCookieFallback:
         assert "--cookies" in calls[0]       # first try used cookies
         assert "--cookies" not in calls[1]   # retry dropped them
 
+    async def test_cookie_retry_failure_surfaces_retry_error_not_original(
+        self, dl, tmp_path, monkeypatch
+    ):
+        """If the no-cookies retry also fails, the *retry's* error should be
+        reported — not the original cookie attempt's error. Otherwise a real
+        DNS/connectivity failure surfaced by the retry gets masked by the
+        stale "format not available" message and never reaches the
+        connectivity/proxy fallback stages, which key off result.error."""
+        from src.downloaders.ytdlp import DownloadResult
+        cookies = tmp_path / "c.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        dl.settings.cookies_file = str(cookies)
+        dl.settings.use_browser_cookies = False
+        dl.settings.proxy_url = None
+
+        calls = []
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            if len(calls) == 1:
+                return DownloadResult(success=False, platform=platform,
+                                      error="ERROR: Requested format is not available")
+            return DownloadResult(
+                success=False, platform=platform,
+                error="ERROR: [download] Got error: [Errno -2] Name or service not known.",
+            )
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://youtu.be/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is False
+        assert "name or service not known" in res.error.lower()
+
     async def test_no_retry_without_cookies_configured(self, dl, tmp_path, monkeypatch):
         from src.downloaders.ytdlp import DownloadResult
         dl.settings.cookies_file = ""
@@ -454,6 +486,42 @@ class TestProxyFallback:
             assert "--proxy" not in c
         assert "--proxy" in calls[-1]
         assert dl.settings.proxy_url in calls[-1]
+
+    async def test_proxy_retry_drops_cookies_on_format_error(self, dl, tmp_path, monkeypatch):
+        """Cookies captured on the normal path can get flagged when replayed
+        from the proxy's exit IP, producing the same degraded "format not
+        available" response as the non-proxied cookie fallback — the proxy
+        branch should retry once more without cookies rather than giving up."""
+        from src.downloaders.ytdlp import DownloadResult
+        cookies = tmp_path / "c.txt"
+        cookies.write_text("# Netscape HTTP Cookie File\n")
+        dl.settings.cookies_file = str(cookies)
+        dl.settings.use_browser_cookies = False
+        dl.settings.proxy_url = "socks5h://127.0.0.1:9999"
+
+        calls = []
+        bare_attempts = 1 + ytdlp_module._CONNECTIVITY_RETRY_ATTEMPTS
+
+        async def fake_run(cmd, output_dir, platform, cb=None):
+            calls.append(cmd)
+            if len(calls) <= bare_attempts:
+                return DownloadResult(
+                    success=False, platform=platform,
+                    error="_ssl.c:993: The handshake operation timed out",
+                )
+            if len(calls) == bare_attempts + 1:
+                return DownloadResult(
+                    success=False, platform=platform,
+                    error="ERROR: Requested format is not available",
+                )
+            return DownloadResult(success=True, output_path=tmp_path / "x.mp4", platform=platform)
+
+        monkeypatch.setattr(dl, "_run_download", fake_run)
+        res = await dl.download("https://example.com/x", tmp_path, MediaFormat.AUTO)
+        assert res.success is True
+        assert len(calls) == bare_attempts + 2
+        assert "--proxy" in calls[-2] and "--cookies" in calls[-2]     # first proxied attempt, with cookies
+        assert "--proxy" in calls[-1] and "--cookies" not in calls[-1]  # retry dropped them
 
     async def test_no_proxy_retry_without_proxy_configured(self, dl, tmp_path, monkeypatch):
         from src.downloaders.ytdlp import DownloadResult

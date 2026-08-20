@@ -310,7 +310,11 @@ class YtDlpDownloader:
         # Fallback: cookies can break extraction on some sites (e.g. a flagged
         # YouTube session forces a format-less "tv downgraded" response). If a
         # format/extraction error came back and cookies were in play, retry
-        # once without them — but keep the original error if the retry also fails.
+        # once without them. Always adopt the retry's result (even on
+        # failure) so the connectivity/proxy fallback stages below see the
+        # retry's actual error rather than the stale original — otherwise a
+        # real connectivity failure surfaced by the retry gets masked by the
+        # original "format not available" message and never reaches them.
         if (
             not result.success
             and self._cookie_args()
@@ -322,9 +326,7 @@ class YtDlpDownloader:
             cmd = self._build_command(
                 url, output_dir, effective_format, max_height=max_height, use_cookies=False
             )
-            retry = await self._run_download(cmd, output_dir, platform, progress_callback)
-            if retry.success:
-                result = retry
+            result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
         # Transient connectivity failures (a handshake stall, a reset, a
         # momentary drop) often clear up on their own — a site can resolve to
@@ -360,6 +362,26 @@ class YtDlpDownloader:
             )
             result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
+            # Cookies captured on the normal network path often get flagged
+            # by the site when replayed from the proxy's very different exit
+            # IP, producing the same degraded "format not available"
+            # response the non-proxied cookie fallback above handles — so
+            # apply the same drop-cookies retry here too.
+            if (
+                not result.success
+                and self._cookie_args()
+                and self._is_format_error(result.error)
+            ):
+                logger.info(
+                    "Format error via proxy with cookies — retrying via proxy without cookies",
+                    platform=platform,
+                )
+                cmd = self._build_command(
+                    url, output_dir, effective_format, proxy=self.settings.proxy_url,
+                    max_height=max_height, use_cookies=False,
+                )
+                result = await self._run_download(cmd, output_dir, platform, progress_callback)
+
         return result
 
     # Substrings in yt-dlp stderr that indicate a country/region licensing block.
@@ -383,6 +405,14 @@ class YtDlpDownloader:
         "unable to download webpage",
         "unable to connect to proxy",
         "connection reset by peer",
+        # DNS resolution failures. Common when an ISP/DPI blocks the
+        # dynamically-generated per-session CDN hostname yt-dlp is handed
+        # (e.g. "rr3---sn-xxxx.googlevideo.com") while the main site domain
+        # stays reachable — extraction succeeds but the byte-fetch can't
+        # resolve. A proxy retry re-resolves through the proxy instead.
+        "name or service not known",
+        "temporary failure in name resolution",
+        "nodename nor servname provided",
     )
 
     def _is_geo_blocked(self, error: str) -> bool:
