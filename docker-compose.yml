@@ -33,6 +33,9 @@ services:
     image: ghcr.io/antlis/tg-media-bot:latest
     build: .
     env_file: .env
+    dns:
+    - 8.8.8.8
+    - 1.1.1.1
     environment:
       API_SERVER_URL: http://telegram-bot-api:8081
       USE_BROWSER_COOKIES: "false"
