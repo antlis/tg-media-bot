@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 
+![Demo](assets/demo.gif)
+
 A lightweight, self-hosted Telegram media downloader bot built with Python.
 
 **🌐 [Website & overview](https://antlis.is-a.dev/tg-media-bot/)**
