@@ -446,8 +446,8 @@ class BotHandlers:
                 text=text,
                 parse_mode="Markdown",
             )
-        except TelegramAPIError:
-            pass
+        except TelegramAPIError as e:
+            logger.debug(f"Status edit failed: {type(e).__name__}: {e}")
 
     async def _notify_error(
         self, chat_id: int, status_msg_id: Optional[int], text: str,
