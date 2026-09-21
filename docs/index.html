@@ -310,6 +310,21 @@
     margin-top: 1.4rem;
   }
 
+  .hero-demo {
+    margin-top: 2.5rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-subtle, #000);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  }
+
+  .hero-demo video {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;
@@ -699,6 +714,18 @@
       <a class="btn btn-primary" href="https://github.com/antlis/tg-media-bot">View on GitHub</a>
       <a class="btn btn-secondary" href="#quickstart">Quick start →</a>
     </div>
+    <figure class="hero-demo">
+      <video
+        autoplay
+        loop
+        muted
+        playsinline
+        preload="metadata"
+        poster="https://res.cloudinary.com/dvbyognrh/video/upload/so_0/blog/tg-media-bot-demo.jpg"
+        aria-label="Demo of tg-media-bot downloading a link and sending the file back in Telegram">
+        <source src="https://res.cloudinary.com/dvbyognrh/video/upload/f_auto:video,q_auto/blog/tg-media-bot-demo.mp4" type="video/mp4" />
+      </video>
+    </figure>
     <div class="highlight-grid" aria-label="Key details">
       <div class="item">
         <span class="label">Platforms</span>
