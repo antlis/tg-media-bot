@@ -73,6 +73,12 @@ class TestValidateUrl:
 
 
 class TestBuildCommand:
+    def test_output_template_caps_title_length(self, dl, tmp_path):
+        # Long titles must be byte-truncated, else yt-dlp hits Errno 36.
+        cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUTO)
+        template = cmd[cmd.index("-o") + 1]
+        assert template.endswith("%(title).150B.%(ext)s")
+
     def test_audio_embeds_thumbnail_and_metadata(self, dl, tmp_path):
         cmd = dl._build_command("https://x", tmp_path, MediaFormat.AUDIO)
         for flag in ("-x", "--embed-thumbnail", "--embed-metadata", "--write-info-json"):

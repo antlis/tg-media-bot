@@ -3,9 +3,10 @@
 import asyncio
 import html
 from pathlib import Path
-from typing import Optional, Union
+from typing import Awaitable, Callable, Optional, TypeVar, Union
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import FSInputFile as InputFile, InputMedia, Message
 
 from ..types.download import MediaFormat
@@ -18,6 +19,35 @@ _THUMB_MAX_BYTES = 200 * 1024
 
 # Telegram caption hard limit
 _CAPTION_MAX = 1024
+
+# Flood control (HTTP 429): how many times to wait out Telegram's retry_after
+# and resend, and the longest single wait we'll accept before giving up.
+_FLOOD_MAX_RETRIES = 3
+_FLOOD_MAX_WAIT = 300
+
+T = TypeVar("T")
+
+
+async def with_flood_retry(send: Callable[[], Awaitable[T]]) -> T:
+    """Run a Telegram send, waiting out flood control (429) and retrying.
+
+    ``send`` is a zero-arg factory so each attempt builds a fresh request. A
+    429 after a finished download would otherwise throw the file away; waiting
+    the server-specified ``retry_after`` and resending is almost always enough.
+    Re-raises once retries are exhausted or the wait is unreasonably long.
+    """
+    for attempt in range(_FLOOD_MAX_RETRIES + 1):
+        try:
+            return await send()
+        except TelegramRetryAfter as e:
+            if attempt >= _FLOOD_MAX_RETRIES or e.retry_after > _FLOOD_MAX_WAIT:
+                raise
+            logger.warning(
+                f"Flood control, retrying in {e.retry_after}s",
+                attempt=attempt + 1,
+            )
+            await asyncio.sleep(e.retry_after + 1)
+    raise AssertionError("unreachable")
 
 
 def _build_caption(title: str, source_url: Optional[str]) -> Optional[str]:
@@ -147,7 +177,7 @@ class UploaderService:
         try:
             input_file = InputFile(file_path)
 
-            message = await self.bot.send_video(
+            message = await with_flood_retry(lambda: self.bot.send_video(
                 chat_id=chat_id,
                 video=input_file,
                 caption=None if minimal else _build_caption(caption, source_url),
@@ -157,7 +187,7 @@ class UploaderService:
                 reply_to_message_id=reply_to_message_id,
                 message_thread_id=message_thread_id,
                 supports_streaming=supports_streaming,
-            )
+            ))
 
             logger.info(
                 f"Video uploaded: {file_path.name}",
@@ -166,6 +196,12 @@ class UploaderService:
             )
 
             return message
+
+        except TelegramRetryAfter as e:
+            # Still rate-limited after retrying: a document upload would hit
+            # the same per-chat limit, so don't burn another attempt on it.
+            logger.error(f"Video upload failed (flood control): {e}")
+            return None
 
         except Exception as e:
             logger.error(f"Video upload failed, trying as document: {e}")
@@ -227,7 +263,7 @@ class UploaderService:
         try:
             input_file = InputFile(file_path)
 
-            message = await self.bot.send_audio(
+            message = await with_flood_retry(lambda: self.bot.send_audio(
                 chat_id=chat_id,
                 audio=input_file,
                 caption=None if minimal else _build_caption(caption, source_url),
@@ -238,7 +274,7 @@ class UploaderService:
                 thumbnail=InputFile(thumb) if thumb else None,
                 reply_to_message_id=reply_to_message_id,
                 message_thread_id=message_thread_id,
-            )
+            ))
 
             logger.info(
                 f"Audio uploaded: {file_path.name}",
@@ -286,14 +322,14 @@ class UploaderService:
         try:
             input_file = InputFile(file_path)
 
-            message = await self.bot.send_document(
+            message = await with_flood_retry(lambda: self.bot.send_document(
                 chat_id=chat_id,
                 document=input_file,
                 caption=None if minimal else _build_caption(caption, source_url),
                 parse_mode="HTML",
                 reply_to_message_id=reply_to_message_id,
                 message_thread_id=message_thread_id,
-            )
+            ))
 
             logger.info(
                 f"Document uploaded: {file_path.name}",
@@ -410,24 +446,24 @@ class UploaderService:
         duration = int(entry["duration"]) if entry.get("duration") else None
 
         if kind == "audio":
-            return await self.bot.send_audio(
+            return await with_flood_retry(lambda: self.bot.send_audio(
                 chat_id=chat_id, audio=file_id, caption=caption, parse_mode="HTML",
                 title=entry.get("title") or None, performer=entry.get("performer") or None,
                 duration=duration, reply_to_message_id=reply_to_message_id,
                 message_thread_id=message_thread_id,
-            )
+            ))
         if kind == "video":
-            return await self.bot.send_video(
+            return await with_flood_retry(lambda: self.bot.send_video(
                 chat_id=chat_id, video=file_id, caption=caption, parse_mode="HTML",
                 duration=duration, supports_streaming=True,
                 reply_to_message_id=reply_to_message_id,
                 message_thread_id=message_thread_id,
-            )
-        return await self.bot.send_document(
+            ))
+        return await with_flood_retry(lambda: self.bot.send_document(
             chat_id=chat_id, document=file_id, caption=caption, parse_mode="HTML",
             reply_to_message_id=reply_to_message_id,
             message_thread_id=message_thread_id,
-        )
+        ))
 
     async def send_progress_message(
         self,

@@ -7,7 +7,7 @@ import uuid
 from typing import Optional
 
 from aiogram import Bot, types
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 
 from ..config import get_settings
 from ..downloaders import YtDlpDownloader
@@ -16,7 +16,7 @@ from ..queue import get_queue_manager
 from ..services.cleanup import get_cleanup_service
 from ..services.media_cache import get_media_cache
 from ..services.minimal_store import get_minimal_store
-from ..services.uploader import UploaderService, cache_entry_from_message
+from ..services.uploader import UploaderService, cache_entry_from_message, with_flood_retry
 from ..types.download import DownloadStatus, MediaFormat
 from ..utils.logger import get_logger
 
@@ -57,6 +57,10 @@ class BotHandlers:
         self._pending: dict[str, str] = {}
         # Lazily fetched and cached; used to detect @mentions of the bot.
         self._bot_username: Optional[str] = None
+        # chat_id -> monotonic time until which Telegram has us flood-limited.
+        # Progress/heartbeat edits are skipped until then so they don't eat
+        # into the per-chat budget the upload itself needs.
+        self._edit_blocked_until: dict[int, float] = {}
 
     def stash_url(self, url: str) -> str:
         """Store a URL for the quality picker and return a short token."""
@@ -235,7 +239,8 @@ class BotHandlers:
                         if status_msg_id is not None:
                             await self._update_status_message(
                                 chat_id, status_msg_id,
-                                f"✅ Sent (from cache).\nTask: `{task.task_id}`"
+                                f"✅ Sent (from cache).\nTask: `{task.task_id}`",
+                                final=True,
                             )
                         self.queue.update_task_status(task.task_id, DownloadStatus.COMPLETED)
                         logger.info("Served from cache", task_id=task.task_id, url=task.url[:80])
@@ -349,7 +354,8 @@ class BotHandlers:
                         chat_id, status_msg_id,
                         f"✅ Done!\n"
                         f"{result.output_path.name}\n"
-                        f"Size: {result.file_size / (1024*1024):.1f}MB"
+                        f"Size: {result.file_size / (1024*1024):.1f}MB",
+                        final=True,
                     )
                 self.queue.update_task_status(
                     task.task_id,
@@ -437,15 +443,41 @@ class BotHandlers:
             )
             await asyncio.sleep(_UPLOAD_HEARTBEAT_INTERVAL)
 
-    async def _update_status_message(self, chat_id: int, message_id: int, text: str):
-        """Edit status message."""
-        try:
+    async def _update_status_message(
+        self, chat_id: int, message_id: int, text: str, final: bool = False,
+    ):
+        """Edit status message.
+
+        Routine progress edits are dropped while the chat is flood-limited.
+        ``final`` edits (result/error) instead wait out flood control, since
+        losing them would leave the status stuck on a stale progress line.
+        """
+        if not final and time.monotonic() < self._edit_blocked_until.get(chat_id, 0.0):
+            return
+
+        async def edit(parse_mode: Optional[str]):
             await self.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
                 text=text,
-                parse_mode="Markdown",
+                parse_mode=parse_mode,
             )
+
+        try:
+            try:
+                if final:
+                    await with_flood_retry(lambda: edit("Markdown"))
+                else:
+                    await edit("Markdown")
+            except TelegramBadRequest as e:
+                # Raw error text (e.g. a path full of underscores) can be
+                # invalid Markdown; resend it as plain text instead.
+                if "can't parse entities" not in str(e).lower():
+                    raise
+                await edit(None)
+        except TelegramRetryAfter as e:
+            self._edit_blocked_until[chat_id] = time.monotonic() + e.retry_after
+            logger.debug(f"Status edit flood-limited for {e.retry_after}s")
         except TelegramAPIError as e:
             logger.debug(f"Status edit failed: {type(e).__name__}: {e}")
 
@@ -457,12 +489,21 @@ class BotHandlers:
         a new one. Failures are surfaced even in minimal mode, where there's
         no status message to reuse."""
         if status_msg_id is not None:
-            await self._update_status_message(chat_id, status_msg_id, text)
+            await self._update_status_message(chat_id, status_msg_id, text, final=True)
             return
-        try:
+
+        async def send(parse_mode: Optional[str]):
             await self.bot.send_message(
-                chat_id, text, parse_mode="Markdown", message_thread_id=message_thread_id
+                chat_id, text, parse_mode=parse_mode, message_thread_id=message_thread_id
             )
+
+        try:
+            try:
+                await with_flood_retry(lambda: send("Markdown"))
+            except TelegramBadRequest as e:
+                if "can't parse entities" not in str(e).lower():
+                    raise
+                await send(None)
         except TelegramAPIError:
             pass
 

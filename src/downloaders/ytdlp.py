@@ -21,6 +21,10 @@ logger = get_logger()
 # DOWNLOAD_TIMEOUT, which bounds the whole yt-dlp run.
 _SOCKET_TIMEOUT = 60
 
+# Max bytes of the title used in output filenames. Leaves ample headroom under
+# Linux's 255-byte NAME_MAX for the extension and yt-dlp's temp suffixes.
+_TITLE_MAX_BYTES = 150
+
 # One representative, current desktop UA per browser family. These don't need
 # to match the user's *exact* installed version — sites checking UA/cookie
 # consistency are looking at browser family + OS class, not a byte-perfect
@@ -717,8 +721,12 @@ class YtDlpDownloader:
         cmd.append("--no-update")
         cmd.extend(["--user-agent", self._resolve_user_agent(use_cookies)])
 
-        # Output template
-        output_template = str(output_dir / "%(title)s.%(ext)s")
+        # Output template. The title is capped at _TITLE_MAX_BYTES (yt-dlp's
+        # ".NB" byte-truncation) so long titles can't push the filename past
+        # the 255-byte NAME_MAX once yt-dlp appends its own suffixes
+        # (".f137.mp4.part", ".temp.mp4", ".info.json", ...) — otherwise the
+        # download dies with "[Errno 36] File name too long".
+        output_template = str(output_dir / f"%(title).{_TITLE_MAX_BYTES}B.%(ext)s")
         cmd.extend(["-o", output_template])
 
         # Format selection based on preference
