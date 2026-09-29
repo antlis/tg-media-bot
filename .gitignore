@@ -24,3 +24,7 @@ env/
 
 # Local agent settings (keep CLAUDE.md, ignore machine-local overrides)
 .claude/settings.local.json
+
+# local backups
+*.bak
+*.bak-*
