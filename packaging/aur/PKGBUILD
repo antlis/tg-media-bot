@@ -1,6 +1,6 @@
 # Maintainer: antlis <antlis@protonmail.com>
 pkgname=tg-media-bot
-pkgver=0.4.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc="Self-hosted Telegram media downloader bot (yt-dlp + aiogram)"
 arch=('any')
