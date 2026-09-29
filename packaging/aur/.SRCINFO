@@ -17,6 +17,6 @@ pkgbase = tg-media-bot
 	optdepends = chromium: browser binary for the headless-browser fallback
 	backup = etc/tg-media-bot/.env
 	source = tg-media-bot-0.5.2.tar.gz::https://github.com/antlis/tg-media-bot/archive/refs/tags/v0.5.2.tar.gz
-	sha256sums = e1f29a9532b7afcaebadc1e9c6cb496a4b032c63d859daf033e4e2a13f7f9ec2
+	sha256sums = 95ac295c6a7c58b5d2907dcd30c6baeea7717268e55708130cec1e8e54fa773e
 
 pkgname = tg-media-bot
