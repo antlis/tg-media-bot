@@ -10,6 +10,10 @@ python-dotenv>=1.0.0
 # Structured logging
 structlog>=24.0.0
 
+# Headless-browser fallback (resolves media for JS-only players yt-dlp can't
+# extract). The Chromium binary is installed separately in the Dockerfile.
+playwright>=1.40.0
+
 # yt-dlp (system install, but include for API reference)
 # yt-dlp>=2024.0.0
 

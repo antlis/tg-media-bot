@@ -30,6 +30,8 @@ This bot downloads media from 1000+ platforms using yt-dlp and uploads the files
 - Audio results are a single post: MP3 with embedded cover art, album-art thumbnail, and title/artist/duration
 - Each result post shows the original source URL as plain (non-linked) text
 - Authenticated downloads via browser cookies (bare Python) or a mounted `cookies.txt` (Docker)
+- Handles split video+audio sources (HLS/DASH) that have no single muxed stream
+- Optional headless-browser fallback: when no yt-dlp extractor can handle a page whose player builds the media URL in JavaScript, the page is loaded in headless Chromium, the media request is captured, and that URL is handed back to yt-dlp
 - Unit-tested with pytest
 
 ## Project Structure
@@ -156,8 +158,12 @@ All settings are loaded from `.env` (see `src/config/settings.py`).
 | `TOPIC_LOCK_FILE` | no | empty | Path to a JSON file persisting per-chat forum-topic locks set via `/topic lock` |
 | `MEDIA_CACHE_FILE` | no | empty | Path to a JSON file caching `file_id`s so repeat URLs are resent instantly |
 | `PROXY_URL` | no | empty | Proxy used **only** as a fallback retry when a download fails with a geo/region block (`socks5h://…` or `http://…`) |
+| `ENABLE_BROWSER_FALLBACK` | no | `true` | Try the headless-browser fallback when no yt-dlp extractor can handle a page (needs Chromium in the image — see `INSTALL_BROWSER`) |
+| `BROWSER_FALLBACK_TIMEOUT` | no | `45` | Seconds the fallback waits for the page to load and start playing |
 | `BOT_API_HOST_PORT` | no | `8082` | Docker only: host port for the local Bot API server |
 | `YTDLP_AUTO_UPDATE` | no | `true` | Docker only: refresh yt-dlp to the latest release on container start |
+
+The headless-browser fallback needs a Chromium binary in the image, which is **opt-in** (it adds ~450 MB). Build with it by setting `INSTALL_BROWSER=true` in `.env` before `docker compose build` (the compose file forwards it as the `INSTALL_BROWSER` build arg), or `docker build --build-arg INSTALL_BROWSER=true`. On the bare-Python/AUR install, run `playwright install chromium` once. Without Chromium the fallback simply no-ops and the bot reports the original failure.
 
 ## Access Control
 

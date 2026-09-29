@@ -66,6 +66,13 @@ class Settings:
     # Format: socks5h://user:pass@host:port  (or http://...)
     proxy_url: Optional[str] = None
 
+    # Headless-browser fallback: when every yt-dlp extractor fails to handle a
+    # page (its player builds the media URL in JavaScript), load it in headless
+    # Chromium, capture the media request, and hand that URL back to yt-dlp.
+    # Needs the optional playwright + chromium install (see Dockerfile).
+    enable_browser_fallback: bool = True
+    browser_fallback_timeout: int = 45  # seconds for the page to load + play
+
     # Optional path to a JSON file persisting per-chat forum-topic locks
     # (toggled via /topic lock|unlock): when a chat has a lock, the bot only
     # responds inside that one topic there. Empty = in-memory only (not saved).
@@ -134,5 +141,7 @@ def _load_settings() -> Settings:
         cache_file=os.getenv("MEDIA_CACHE_FILE", ""),
         minimal_mode_file=os.getenv("MINIMAL_MODE_FILE", ""),
         proxy_url=os.getenv("PROXY_URL") or None,
+        enable_browser_fallback=os.getenv("ENABLE_BROWSER_FALLBACK", "true").lower() == "true",
+        browser_fallback_timeout=int(os.getenv("BROWSER_FALLBACK_TIMEOUT", "45")),
         topic_lock_file=os.getenv("TOPIC_LOCK_FILE", ""),
     )

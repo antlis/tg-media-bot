@@ -442,6 +442,34 @@ class YtDlpDownloader:
                 )
                 result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
+        # Last resort: some sites build the media URL in JavaScript, so the page
+        # yt-dlp fetches contains no stream for its extractors to find ("Unsupported
+        # URL" / "unable to extract"). Load the page in a headless browser, capture
+        # the media request the player actually makes, then hand that URL back to
+        # yt-dlp so the normal download/recode/upload path still applies.
+        if (
+            not result.success
+            and self.settings.enable_browser_fallback
+            and self._is_unsupported_error(result.error)
+        ):
+            from .browser import resolve_media_url  # optional dependency, import lazily
+
+            logger.info(
+                "No extractor could handle the page — trying headless-browser fallback",
+                platform=platform,
+            )
+            resolved = await resolve_media_url(url, self.settings.browser_fallback_timeout)
+            if resolved:
+                media_url, referer = resolved
+                logger.info("Headless-browser fallback captured a media URL", platform=platform)
+                cmd = self._build_command(
+                    media_url, output_dir, effective_format,
+                    max_height=max_height, use_cookies=False, referer=referer,
+                )
+                result = await self._run_download(cmd, output_dir, platform, progress_callback)
+            else:
+                logger.info("Headless-browser fallback found no media URL", platform=platform)
+
         return result
 
     # Substrings in yt-dlp stderr that indicate a country/region licensing block.
@@ -500,6 +528,19 @@ class YtDlpDownloader:
             "requested format is not available" in e
             or "unable to extract" in e
             or "no video formats" in e
+        )
+
+    @staticmethod
+    def _is_unsupported_error(error: str) -> bool:
+        """True if no yt-dlp extractor could handle the page at all — the case
+        where a headless-browser fallback (which runs the page's JS) may find a
+        media URL that static extraction can't."""
+        e = (error or "").lower()
+        return (
+            "unsupported url" in e
+            or "unable to extract" in e
+            or "no video formats found" in e
+            or "no suitable" in e
         )
 
     @staticmethod
@@ -690,7 +731,16 @@ class YtDlpDownloader:
                 f"bestvideo{h}[ext=mp4]+bestaudio[ext=m4a]/"
                 f"bestvideo{h}+bestaudio/best{h}/best"
             )
-        return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=webm]+bestaudio[ext=webm]/18/best"
+        # The trailing bestvideo+bestaudio/best (no ext constraint) is what lets
+        # split video+audio sources with no single muxed stream — HLS/DASH sites,
+        # most TV/streaming players — resolve; without it they die with
+        # "Requested format is not available". The max_height branch above
+        # already carries the same tail.
+        return (
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=webm]+bestaudio[ext=webm]/18/"
+            "bestvideo+bestaudio/best"
+        )
 
     def _build_command(
         self,
@@ -700,6 +750,7 @@ class YtDlpDownloader:
         proxy: Optional[str] = None,
         max_height: Optional[int] = None,
         use_cookies: bool = True,
+        referer: Optional[str] = None,
     ) -> List[str]:
         """Build yt-dlp command with appropriate options."""
         # --restrict-filenames: ASCII-only, no spaces/special chars in the
@@ -720,6 +771,11 @@ class YtDlpDownloader:
         # Suppress version update warning
         cmd.append("--no-update")
         cmd.extend(["--user-agent", self._resolve_user_agent(use_cookies)])
+
+        # When we hand yt-dlp a media URL captured from a page's player, most
+        # CDNs require the originating page as Referer.
+        if referer:
+            cmd.extend(["--referer", referer])
 
         # Output template. The title is capped at _TITLE_MAX_BYTES (yt-dlp's
         # ".NB" byte-truncation) so long titles can't push the filename past

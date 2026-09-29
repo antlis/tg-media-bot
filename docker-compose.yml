@@ -31,7 +31,12 @@ services:
     # `docker compose up` pulls the prebuilt image; `up --build` builds from
     # this checkout instead (for local development / unreleased changes).
     image: ghcr.io/antlis/tg-media-bot:latest
-    build: .
+    build:
+      context: .
+      args:
+        # Set INSTALL_BROWSER=true in .env to bake in Chromium for the
+        # headless-browser fallback (JS-only players). Off by default (lean image).
+        INSTALL_BROWSER: ${INSTALL_BROWSER:-false}
     env_file: .env
     environment:
       API_SERVER_URL: http://telegram-bot-api:8081
