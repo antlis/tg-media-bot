@@ -6,7 +6,7 @@ set -e
 
 if [ "${YTDLP_AUTO_UPDATE:-true}" = "true" ]; then
     echo "Updating yt-dlp to the latest release..."
-    pip install --no-cache-dir --upgrade yt-dlp \
+    pip install --no-cache-dir --upgrade "yt-dlp[default,curl-cffi]" \
         || echo "yt-dlp update failed; continuing with the bundled version."
 fi
 
