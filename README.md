@@ -258,3 +258,29 @@ The thumbnail tests need `ffmpeg` on PATH; they're skipped automatically if it's
 - [Command Reference](COMMANDS.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Contributor guide for AI agents](CLAUDE.md)
+
+## Custom extractor plugins
+
+Some sites build their media URL in JavaScript or hide it behind a site-specific
+API, so neither yt-dlp nor the headless-browser fallback can reach it. You can
+teach the bot about such a site with a **plugin**: a small Python file that turns
+a page URL into a media URL yt-dlp can download.
+
+Drop `.py` files into a plugin directory — the `./plugins` folder mounted into the
+container by default (`PLUGIN_DIR=/plugins`), or any directory named by the
+`PLUGIN_DIR` env var on a bare-metal install. Each plugin exposes two callables:
+
+```python
+def match(url: str) -> bool: ...     # claim the URLs you handle
+async def resolve(url: str): ...     # -> media_url | (media_url, referer) | ResolveResult | None
+```
+
+For a URL a plugin claims, its resolver runs **before** yt-dlp; the returned URL
+then goes through the normal download / recode / upload path. A plugin that
+returns `None` or raises is skipped, falling through to yt-dlp and the
+headless-browser fallback. See [`examples/plugin_example.py`](examples/plugin_example.py)
+for a complete template.
+
+Plugins are **not committed** — the `plugins/` directory is gitignored, so
+site-specific extractors stay private to your deployment. Set `ENABLE_PLUGINS=false`
+to ignore the directory entirely.

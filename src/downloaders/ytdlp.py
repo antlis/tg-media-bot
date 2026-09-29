@@ -191,6 +191,7 @@ class YtDlpDownloader:
     def __init__(self):
         self.settings = get_settings()
         self._check_yt_dlp()
+        self._plugins = None  # custom extractor plugins, loaded lazily
 
     def _check_yt_dlp(self):
         """Verify yt-dlp is available."""
@@ -335,6 +336,42 @@ class YtDlpDownloader:
 
         return result
 
+    def _get_plugins(self):
+        """Load custom extractor plugins once (from PLUGIN_DIR), then cache them."""
+        if self._plugins is None:
+            if self.settings.enable_plugins and self.settings.plugin_dir:
+                from .plugins import load_plugins
+
+                self._plugins = load_plugins(self.settings.plugin_dir)
+            else:
+                self._plugins = []
+        return self._plugins
+
+    async def _try_plugins(
+        self, url, output_dir, effective_format, max_height, progress_callback, platform
+    ):
+        """If a custom plugin claims this URL, resolve it and download the result.
+
+        Returns a successful DownloadResult, or None to fall through to yt-dlp
+        (no plugin matched, none produced a URL, or the resolved download failed).
+        """
+        plugins = self._get_plugins()
+        if not plugins:
+            return None
+        from .plugins import resolve_with_plugins
+
+        resolved = await resolve_with_plugins(url, plugins)
+        if not resolved:
+            return None
+        logger.info("Custom extractor plugin resolved the URL", platform=platform)
+        cmd = self._build_command(
+            resolved.media_url, output_dir, effective_format,
+            max_height=max_height, use_cookies=False,
+            referer=resolved.referer, headers=resolved.headers or None,
+        )
+        result = await self._run_download(cmd, output_dir, platform, progress_callback)
+        return result if result.success else None
+
     async def download(
         self,
         url: str,
@@ -362,6 +399,16 @@ class YtDlpDownloader:
         platform = self.detect_platform(url)
         effective_format = self._effective_format(platform, preferred_format)
         logger.info(f"Starting download", platform=platform, url=url[:80])
+
+        # Custom extractor plugins (opt-in via PLUGIN_DIR): a user-supplied
+        # resolver that claims this URL turns it into a direct media URL, tried
+        # before yt-dlp's own extractors. On no match / no result / a failed
+        # resolved download we fall through to the normal path below.
+        plugin_result = await self._try_plugins(
+            url, output_dir, effective_format, max_height, progress_callback, platform
+        )
+        if plugin_result is not None:
+            return plugin_result
 
         # Build and run.
         cmd = self._build_command(url, output_dir, effective_format, max_height=max_height)
@@ -751,6 +798,7 @@ class YtDlpDownloader:
         max_height: Optional[int] = None,
         use_cookies: bool = True,
         referer: Optional[str] = None,
+        headers: Optional[dict] = None,
     ) -> List[str]:
         """Build yt-dlp command with appropriate options."""
         # --restrict-filenames: ASCII-only, no spaces/special chars in the
@@ -776,6 +824,12 @@ class YtDlpDownloader:
         # CDNs require the originating page as Referer.
         if referer:
             cmd.extend(["--referer", referer])
+
+        # Extra request headers a plugin may need (e.g. Origin) for the CDN to
+        # serve the captured media URL.
+        if headers:
+            for key, value in headers.items():
+                cmd.extend(["--add-header", f"{key}:{value}"])
 
         # Output template. The title is capped at _TITLE_MAX_BYTES (yt-dlp's
         # ".NB" byte-truncation) so long titles can't push the filename past

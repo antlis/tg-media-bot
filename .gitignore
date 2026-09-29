@@ -28,3 +28,7 @@ env/
 # local backups
 *.bak
 *.bak-*
+
+# Custom extractor plugins (user-supplied; may be site-specific — keep private)
+/plugins/*
+!/plugins/.gitkeep

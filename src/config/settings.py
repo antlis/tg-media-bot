@@ -73,6 +73,11 @@ class Settings:
     enable_browser_fallback: bool = True
     browser_fallback_timeout: int = 45  # seconds for the page to load + play
 
+    # Directory of user-supplied extractor plugins (each a .py exposing match()
+    # + resolve()). Empty = none loaded. See examples/plugin_example.py.
+    plugin_dir: str = ""
+    enable_plugins: bool = True
+
     # Optional path to a JSON file persisting per-chat forum-topic locks
     # (toggled via /topic lock|unlock): when a chat has a lock, the bot only
     # responds inside that one topic there. Empty = in-memory only (not saved).
@@ -143,5 +148,7 @@ def _load_settings() -> Settings:
         proxy_url=os.getenv("PROXY_URL") or None,
         enable_browser_fallback=os.getenv("ENABLE_BROWSER_FALLBACK", "true").lower() == "true",
         browser_fallback_timeout=int(os.getenv("BROWSER_FALLBACK_TIMEOUT", "45")),
+        plugin_dir=os.getenv("PLUGIN_DIR", ""),
+        enable_plugins=os.getenv("ENABLE_PLUGINS", "true").lower() == "true",
         topic_lock_file=os.getenv("TOPIC_LOCK_FILE", ""),
     )

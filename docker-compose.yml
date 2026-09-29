@@ -55,10 +55,13 @@ services:
       MINIMAL_MODE_FILE: /data/minimal_mode.json
       # Per-chat forum-topic locks (/topic lock|unlock) persist here
       TOPIC_LOCK_FILE: /data/topic_locks.json
+      # Directory of custom extractor plugins (mounted below). Empty dir = off.
+      PLUGIN_DIR: /plugins
     volumes:
       - bot-downloads:/tmp/tg-media-bot
       - bot-logs:/data
       - ./cookies:/cookies
+      - ./plugins:/plugins
     depends_on:
       telegram-bot-api:
         condition: service_healthy
