@@ -1,6 +1,6 @@
 pkgbase = tg-media-bot
 	pkgdesc = Self-hosted Telegram media downloader bot (yt-dlp + aiogram)
-	pkgver = 0.5.1
+	pkgver = 0.5.2
 	pkgrel = 1
 	url = https://github.com/antlis/tg-media-bot
 	arch = any
@@ -16,7 +16,7 @@ pkgbase = tg-media-bot
 	optdepends = python-playwright: headless-browser fallback for JS-only players
 	optdepends = chromium: browser binary for the headless-browser fallback
 	backup = etc/tg-media-bot/.env
-	source = tg-media-bot-0.5.1.tar.gz::https://github.com/antlis/tg-media-bot/archive/refs/tags/v0.5.1.tar.gz
+	source = tg-media-bot-0.5.2.tar.gz::https://github.com/antlis/tg-media-bot/archive/refs/tags/v0.5.2.tar.gz
 	sha256sums = e1f29a9532b7afcaebadc1e9c6cb496a4b032c63d859daf033e4e2a13f7f9ec2
 
 pkgname = tg-media-bot

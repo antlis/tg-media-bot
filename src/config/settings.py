@@ -78,6 +78,10 @@ class Settings:
     plugin_dir: str = ""
     enable_plugins: bool = True
 
+    # Parallel HLS/DASH fragment downloads. Higher = faster, and it's what lets
+    # a download beat sites that expire segment URLs shortly after issuing them.
+    concurrent_fragments: int = 16
+
     # Optional path to a JSON file persisting per-chat forum-topic locks
     # (toggled via /topic lock|unlock): when a chat has a lock, the bot only
     # responds inside that one topic there. Empty = in-memory only (not saved).
@@ -150,5 +154,6 @@ def _load_settings() -> Settings:
         browser_fallback_timeout=int(os.getenv("BROWSER_FALLBACK_TIMEOUT", "45")),
         plugin_dir=os.getenv("PLUGIN_DIR", ""),
         enable_plugins=os.getenv("ENABLE_PLUGINS", "true").lower() == "true",
+        concurrent_fragments=int(os.getenv("CONCURRENT_FRAGMENTS", "16")),
         topic_lock_file=os.getenv("TOPIC_LOCK_FILE", ""),
     )

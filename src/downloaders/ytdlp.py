@@ -414,6 +414,22 @@ class YtDlpDownloader:
         cmd = self._build_command(url, output_dir, effective_format, max_height=max_height)
         result = await self._run_download(cmd, output_dir, platform, progress_callback)
 
+        # Some sites issue fragment URLs that expire seconds after the playlist
+        # is fetched, so a large/high-res file can't finish downloading in time
+        # and comes back empty. Retry at progressively lower quality caps so a
+        # size that *can* complete within that window still gets through.
+        for cap in (720, 480, 360):
+            if result.success or not self._is_fragment_expiry_error(result.error):
+                break
+            if max_height and max_height <= cap:
+                continue
+            logger.info(
+                "Download didn't complete in time — retrying at a lower quality cap",
+                platform=platform, cap=cap,
+            )
+            cmd = self._build_command(url, output_dir, effective_format, max_height=cap)
+            result = await self._run_download(cmd, output_dir, platform, progress_callback)
+
         # Fallback: cookies can break extraction on some sites (e.g. a flagged
         # YouTube session forces a format-less "tv downgraded" response). If a
         # format/extraction error came back and cookies were in play, retry
@@ -518,6 +534,12 @@ class YtDlpDownloader:
                 logger.info("Headless-browser fallback found no media URL", platform=platform)
 
         return result
+
+    @staticmethod
+    def _is_fragment_expiry_error(error: str) -> bool:
+        """Download came back empty because fragment URLs expired mid-download."""
+        e = (error or "").lower()
+        return "downloaded file is empty" in e or "http error 410" in e
 
     # Substrings in yt-dlp stderr that indicate a country/region licensing block.
     _GEO_MARKERS = (
@@ -884,6 +906,11 @@ class YtDlpDownloader:
         cmd.extend([
             "--socket-timeout", str(_SOCKET_TIMEOUT),
         ])
+
+        # Download fragments in parallel. Besides being faster, this is what
+        # lets a fragmented download finish before sites that expire segment
+        # URLs shortly after issuing the playlist invalidate them.
+        cmd.extend(["--concurrent-fragments", str(self.settings.concurrent_fragments)])
 
         # Don't overwrite
         cmd.append("--no-overwrites")

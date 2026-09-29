@@ -259,6 +259,12 @@ The thumbnail tests need `ffmpeg` on PATH; they're skipped automatically if it's
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Contributor guide for AI agents](CLAUDE.md)
 
+Downloads that use HLS/DASH fragments are fetched in parallel
+(`CONCURRENT_FRAGMENTS`, default 16). This is faster and lets a download finish
+before sites that expire segment URLs shortly after issuing them invalidate
+them; if a high-resolution file still can't complete in that window, the bot
+automatically retries at progressively lower quality.
+
 ## Custom extractor plugins
 
 Some sites build their media URL in JavaScript or hide it behind a site-specific
