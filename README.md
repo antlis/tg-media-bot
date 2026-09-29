@@ -281,6 +281,10 @@ returns `None` or raises is skipped, falling through to yt-dlp and the
 headless-browser fallback. See [`examples/plugin_example.py`](examples/plugin_example.py)
 for a complete template.
 
+A resolver may also assemble a playlist itself and return a local `file://`
+URL (e.g. after rewriting a site's rotating segment hosts) — the bot enables
+yt-dlp to read it automatically.
+
 Plugins are **not committed** — the `plugins/` directory is gitignored, so
 site-specific extractors stay private to your deployment. Set `ENABLE_PLUGINS=false`
 to ignore the directory entirely.

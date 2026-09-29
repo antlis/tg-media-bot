@@ -897,6 +897,12 @@ class YtDlpDownloader:
             "--progress-template", _PROGRESS_TEMPLATE,
         ])
 
+        # A plugin may hand back a local (file://) playlist it assembled
+        # (e.g. after rewriting a site's segment hosts); yt-dlp needs this
+        # opt-in to read a local file.
+        if url.startswith("file://"):
+            cmd.append("--enable-file-urls")
+
         # URL
         cmd.append(url)
 
