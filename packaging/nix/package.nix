@@ -25,7 +25,7 @@ in
 stdenv.mkDerivation {
   pname = "tg-media-bot";
   # Keep in sync with the release tag (and packaging/aur/PKGBUILD).
-  version = "0.5.2";
+  version = "0.6.0";
 
   src = lib.fileset.toSource {
     root = ../..;

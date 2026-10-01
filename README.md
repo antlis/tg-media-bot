@@ -41,6 +41,7 @@ tg-media-bot/
 ├── main.py              # Entry point: builds Bot/Dispatcher, starts polling
 ├── docker-compose.yml   # Bot + local Telegram Bot API server
 ├── Dockerfile           # Bot image (installs ffmpeg + yt-dlp)
+├── flake.nix            # Nix package, dev shell, checks (see packaging/nix/)
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Configuration template
 ├── src/
@@ -67,6 +68,7 @@ tg-media-bot/
 │   └── utils/
 │       ├── logger.py    # Structured logging
 │       └── sanitizer.py # Filename sanitization
+├── packaging/           # aur/ (PKGBUILD + unit), nix/ (package + home-manager module)
 └── tests/               # pytest suite (see Testing)
 ```
 
