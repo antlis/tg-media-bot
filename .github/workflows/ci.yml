@@ -30,3 +30,10 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check

@@ -134,6 +134,26 @@ sudo systemctl enable --now tg-media-bot
 
 Packaging files and publishing notes live in [`packaging/aur/`](packaging/aur/).
 
+## Install with Nix
+
+```bash
+nix run github:antlis/tg-media-bot        # BOT_TOKEN etc. from the environment
+nix build .#with-browser                  # + headless-Chromium fallback (large)
+nix develop                               # dev shell with deps + pytest
+```
+
+`yt-dlp` and `ffmpeg` are put on the bot's `PATH` by the wrapper; yt-dlp comes
+from nixpkgs, so bump it with `nix flake update`. For home-manager, import
+`homeManagerModules.default` and enable `services.tg-media-bot` — it runs a user
+service, keeps state under `~/.local/state/tg-media-bot`, and reads `BOT_TOKEN`
+from `environmentFile` (extra env vars go in `settings`). `nix flake check`
+builds the package and runs the test suite.
+
+The local Bot API server (2 GB uploads) is a separate service — keep it in the
+compose file (`docker compose up -d telegram-bot-api`) or run nixpkgs'
+`telegram-bot-api`, then set `API_SERVER_URL`. Don't run the Docker `bot` and
+the Nix bot at once — they'd poll the same token.
+
 ## Configuration
 
 All settings are loaded from `.env` (see `src/config/settings.py`).
