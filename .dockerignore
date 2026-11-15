@@ -1,7 +1,7 @@
+target
 .env
+data
+cookies
+plugins
 .git
-__pycache__
-*.pyc
 *.md
-.dockerignore
-docker-compose.yml

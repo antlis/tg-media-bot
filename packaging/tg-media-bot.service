@@ -1,0 +1,50 @@
+# systemd unit for running without Docker.
+#
+#   sudo install -m755 target/release/tg-media-bot /usr/local/bin/
+#   sudo install -Dm600 .env /etc/tg-media-bot/env
+#   sudo cp packaging/tg-media-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tg-media-bot
+#
+# yt-dlp and ffmpeg must be on PATH (e.g. pipx install yt-dlp; apt install ffmpeg).
+
+[Unit]
+Description=tg-media-bot - self-hosted Telegram media downloader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=tg-media-bot
+WorkingDirectory=/var/lib/tg-media-bot
+EnvironmentFile=/etc/tg-media-bot/env
+Environment=DATA_DIR=/var/lib/tg-media-bot TEMP_DIR=/var/lib/tg-media-bot/tmp MALLOC_ARENA_MAX=2
+ExecStart=/usr/local/bin/tg-media-bot
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# Hard caps for the bot and every yt-dlp/ffmpeg it starts. The kernel
+# reclaims/kills inside this cgroup instead of freezing the whole VPS.
+MemoryHigh=600M
+MemoryMax=768M
+MemorySwapMax=0
+CPUQuota=100%
+CPUWeight=50
+IOWeight=50
+TasksMax=256
+Nice=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

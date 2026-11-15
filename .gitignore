@@ -1,34 +1,6 @@
-# Secrets
+/target
 .env
-.env.bak*
-cookies/
-
-# Python bytecode
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environments
-venv/
-.venv/
-env/
-
-# Tooling caches
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-
-# Editor
-.vscode/
-.idea/
-
-# Local agent settings (keep CLAUDE.md, ignore machine-local overrides)
-.claude/settings.local.json
-
-# local backups
-*.bak
-*.bak-*
-
-# Custom extractor plugins (user-supplied; may be site-specific — keep private)
+/data
+/cookies
 /plugins/*
 !/plugins/.gitkeep

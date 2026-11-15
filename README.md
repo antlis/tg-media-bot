@@ -1,318 +1,227 @@
 # tg-media-bot
 
-[![CI](https://github.com/antlis/tg-media-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/antlis/tg-media-bot/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+Быстрый, легковесный и надежный self-hosted Telegram-бот на Rust для скачивания видео и аудио из социальных сетей и видеохостингов с отправкой прямо в чат Telegram.
 
-![Demo](assets/demo.gif)
+Бот спроектирован с упором на максимальную производительность и бережное отношение к ресурсам: потребляет около **4,5 МБ RAM** в простое, строго контролирует дочерние процессы, защищает сервер от перегрузок и OOM, а также поддерживает отправку файлов размером до **2 ГБ**.
 
-A lightweight, self-hosted Telegram media downloader bot built with Python.
+---
 
-**🌐 [Website & overview](https://antlis.is-a.dev/tg-media-bot/)**
+## Возможности
 
-## Overview
+- ⚡ **Высокая скорость и низкое потребление памяти** — ядро на Rust с асинхронным рантаймом. Даже на минимальных тарифах VPS бот работает стабильно и не зависает.
+- 📦 **Файлы до 2 ГБ** — благодаря встроенному локальному серверу Telegram Bot API бот обходит стандартное ограничение Telegram в 50 МБ и отправляет тяжелые видео в высоком качестве.
+- 🎯 **Выбор качества** — интерактивные кнопки при отправке ссылки (максимум, 1080p, 720p, 480p, 360p или только аудио). Выбор можно зафиксировать командой `/quality`.
+- 🚀 **Умный кэш (Instant Delivery)** — мгновенная отдача ранее загруженных видео по `file_id` без повторного скачивания и ожидания. Бот нормализует ссылки (YouTube Shorts, посты X/Twitter и т.д.) и определяет дубликаты до старта загрузки.
+- 🧹 **Чистая лента (Clean Chat)** — сервисные сообщения («Качаем...»), меню качества и исходное сообщение пользователя со ссылкой автоматически удаляются после успешной отправки медиафайла. Ссылка на оригинал и название сохраняются в описании к файлу.
+- 👥 **Справедливая очередь** — личная очередь для каждого пользователя с защитой от блокировки бота одним спамером.
+- 🌐 **Мультиязычность** — русский, украинский, английский и испанский языки с автоопределением по клиенту Telegram и командой смены языка `/lang`.
+- 🛡️ **Безопасность** — белый список пользователей (`ALLOWED_USERS`), защита от SSRF (блокировка запросов к локальным сетям и localhost).
 
-This bot downloads media from 1000+ platforms using yt-dlp and uploads the files back to Telegram. It's designed for homelab usage with minimal resource consumption and no external dependencies beyond yt-dlp and ffmpeg.
+---
 
-**Key Characteristics:**
-- Pure utility bot - no AI, no LLM calls
-- Async architecture using aiogram 3.x
-- Access control via an allowlist of Telegram user IDs
-- Per-user rate limiting
-- Automatic temporary file cleanup
-- Live download progress bar that updates in place (works the same in DMs and groups)
-- Instant re-sends: a previously downloaded URL is resent from Telegram's cache (by `file_id`) without re-downloading
-- Friendly, actionable error messages (e.g. "age-restricted — set a COOKIES_FILE")
-- yt-dlp kept current automatically in Docker (refreshed on container start)
-- Uploads up to 2GB via a bundled local Telegram Bot API server (vs. 50MB on the standard API)
-- Audio-only sources (e.g. SoundCloud) are auto-detected and always fetched as tagged MP3
-- Direct media URLs (e.g. an imageboard `.webm`) are transcoded to a streamable MP4 (H.264/AAC, `moov` at the start) so Telegram plays them inline instead of attaching as a file
-- Audio results are a single post: MP3 with embedded cover art, album-art thumbnail, and title/artist/duration
-- Each result post shows the original source URL as plain (non-linked) text
-- Authenticated downloads via browser cookies (bare Python) or a mounted `cookies.txt` (Docker)
-- Handles split video+audio sources (HLS/DASH) that have no single muxed stream
-- Optional headless-browser fallback: when no yt-dlp extractor can handle a page whose player builds the media URL in JavaScript, the page is loaded in headless Chromium, the media request is captured, and that URL is handed back to yt-dlp
-- Unit-tested with pytest
+## Поддерживаемые сайты
 
-## Project Structure
+Бот поддерживает более **1000+ сервисов** благодаря движку `yt-dlp`, в том числе:
 
-```
-tg-media-bot/
-├── main.py              # Entry point: builds Bot/Dispatcher, starts polling
-├── docker-compose.yml   # Bot + local Telegram Bot API server
-├── Dockerfile           # Bot image (installs ffmpeg + yt-dlp)
-├── flake.nix            # Nix package, dev shell, checks (see packaging/nix/)
-├── requirements.txt     # Python dependencies
-├── .env.example         # Configuration template
-├── src/
-│   ├── bot/
-│   │   ├── handlers.py  # URL extraction, download/upload orchestration
-│   │   └── router.py    # Dispatcher, command routing, auth middleware
-│   ├── commands/
-│   │   └── handlers.py  # /start, /help, /audio, /video, /status, /minimal, /topic, etc.
-│   ├── config/
-│   │   └── settings.py  # Env-based settings (singleton)
-│   ├── downloaders/
-│   │   └── ytdlp.py     # yt-dlp subprocess wrapper
-│   ├── queue/
-│   │   └── manager.py   # Async queue + per-user rate limiting
-│   ├── services/
-│   │   ├── chat_store.py    # Persistent group-chat allowlist
-│   │   ├── cleanup.py       # Temp file cleanup
-│   │   ├── media_cache.py   # file_id cache for instant resends
-│   │   ├── minimal_store.py # Per-chat minimal-UI toggle
-│   │   ├── topic_lock.py    # Per-chat forum-topic restriction
-│   │   └── uploader.py      # Telegram upload (video/audio/document)
-│   ├── types/
-│   │   └── download.py  # DownloadTask, DownloadStatus, MediaFormat
-│   └── utils/
-│       ├── logger.py    # Structured logging
-│       └── sanitizer.py # Filename sanitization
-├── packaging/           # aur/ (PKGBUILD + unit), nix/ (package + home-manager module)
-└── tests/               # pytest suite (see Testing)
-```
+- **YouTube** (видео, Shorts, плейлисты, YouTube Music)
+- **TikTok** (видео и звук)
+- **Instagram** (Reels, публикации, истории)
+- **X (Twitter)** (видео и GIF)
+- **Reddit** (видео со звуком)
+- **VK & Rutube**
+- **Twitch** (клипы и записи стримов)
+- **Vimeo, SoundCloud, Pinterest** и многие другие
 
-## Quick Start (Docker — recommended)
+*Если нужного сайта нет в yt-dlp, бот поддерживает подключение собственных внешних плагинов.*
 
-Running via Docker Compose brings up the bot **and** a local Telegram Bot API server, which raises the upload limit from 50MB to 2GB.
+---
 
-### 1. Get Telegram credentials
+## Быстрый старт на VPS (Docker)
 
-- **Bot token** from [@BotFather](https://t.me/BotFather) (`/newbot`).
-- **API ID + API hash** from [my.telegram.org/apps](https://my.telegram.org/apps) (needed by the local Bot API server).
+Для хостинга бота подойдет любой сервер с Linux (Ubuntu / Debian).
 
-### 2. Configure
+> 💡 **Где арендовать VPS:** недорогой и надежный сервер можно взять на [HandyHost (HSHP)](https://hshp.host/?from=12995). Для работы бота с запасом хватит базового тарифа с **1 vCPU и 1–2 ГБ RAM**.
+
+### Установка в 5 шагов:
+
+1. **Подключитесь к VPS по SSH:**
+   ```bash
+   ssh root@ip_вашего_сервера
+   ```
+
+2. **Установите Docker** (если еще не установлен):
+   ```bash
+   curl -fsSL https://get.docker.com | sh
+   ```
+
+3. **Создайте каталог бота и скачайте конфиги:**
+   ```bash
+   mkdir -p tg-media-bot && cd tg-media-bot
+   curl -fSL https://raw.githubusercontent.com/olluorg/tg-media-bot/master/docker-compose.yml -o docker-compose.yml
+   curl -fSL https://raw.githubusercontent.com/olluorg/tg-media-bot/master/.env.example -o .env
+   ```
+
+4. **Заполните `.env`:**
+   ```bash
+   nano .env
+   ```
+   Минимально необходимые параметры:
+   - `BOT_TOKEN` — токен бота от [@BotFather](https://t.me/BotFather).
+   - `ALLOWED_USERS` — ваш ID в Telegram через запятую (узнать в [@userinfobot](https://t.me/userinfobot)), чтобы ботом пользовались только вы или ваши друзья. Если оставить пустым — доступ открыт всем.
+   - `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` — с [my.telegram.org/apps](https://my.telegram.org/apps). Нужны для отправки файлов до **2 ГБ** через локальный Bot API.
+
+   > 💡 **Упрощенный запуск без API ID/Hash (лимит файлов 50 МБ):**  
+   > Если файлы больше 50 МБ не нужны, удалите из `docker-compose.yml` сервис `telegram-bot-api` и строки `API_SERVER_URL` / `LOCAL_API_SHARED_FILES`. В таком случае потребуются только `BOT_TOKEN` и `ALLOWED_USERS`.
+
+5. **Запустите бота:**
+   ```bash
+   docker compose up -d
+   docker compose logs -f bot
+   ```
+
+---
+
+### Альтернативные способы запуска
+
+<details>
+<summary><b>Сборка локально из исходников (Docker)</b></summary>
 
 ```bash
+git clone https://github.com/olluorg/tg-media-bot.git
+cd tg-media-bot
 cp .env.example .env
 nano .env
-```
-
-Set at minimum `BOT_TOKEN`, `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `ALLOWED_USERS`.
-
-### 3. Run
-
-```bash
-docker compose up -d         # pulls the prebuilt image from GHCR
+docker compose up -d --build
 docker compose logs -f bot
 ```
+</details>
 
-`docker-compose.yml` references the published image `ghcr.io/antlis/tg-media-bot:latest`, so no local build is needed. To build from source instead (e.g. for unreleased changes), use `docker compose up -d --build`.
+<details>
+<summary><b>Запуск без Docker (systemd)</b></summary>
 
-To stop: `docker compose down`.
-
-> **Port note:** the local Bot API server publishes on host port `8082` (`8082:8081` in `docker-compose.yml`). The bot reaches it over the internal Compose network as `http://telegram-bot-api:8081`, so the host port only matters if another service already occupies `8081`. Adjust if `8082` is also taken.
-
-## Quick Start (bare Python)
-
-This path uses the **standard** Telegram Bot API (50MB upload limit) and supports Firefox cookies.
+Требуются установленные `yt-dlp`, `ffmpeg`, `ffprobe` в `PATH`, а также `deno` для YouTube:
 
 ```bash
-# System packages (Arch)
-sudo pacman -S yt-dlp ffmpeg
-
-# Python deps
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# Configure
-cp .env.example .env   # set BOT_TOKEN, ALLOWED_USERS
-
-# Run
-python main.py
+cargo build --release
+sudo install -m755 target/release/tg-media-bot /usr/local/bin/
+sudo install -Dm600 .env /etc/tg-media-bot/env
+sudo cp packaging/tg-media-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now tg-media-bot
 ```
+</details>
 
-See [Installation Guide](INSTALLATION.md) for systemd service setup and Firefox cookie configuration.
+---
 
-## Install on Arch (AUR)
+## Обновление бота
 
-Arch users can install a packaged build with a systemd service:
+Если бот запущен через **Docker Compose** (стандартный способ):
 
 ```bash
-paru -S tg-media-bot          # or: yay -S tg-media-bot
-sudoedit /etc/tg-media-bot/.env   # set BOT_TOKEN, ALLOWED_USERS
-sudo systemctl enable --now tg-media-bot
+cd tg-media-bot
+docker compose pull && docker compose up -d
+```
+> *Примечание: движок `yt-dlp` внутри контейнера также обновляется автоматически раз в сутки (когда нет активных загрузок).*
+
+<details>
+<summary><b>При установке из исходников</b></summary>
+
+**Docker (локальная сборка):**
+```bash
+cd tg-media-bot
+git pull
+docker compose up -d --build
 ```
 
-Packaging files and publishing notes live in [`packaging/aur/`](packaging/aur/).
+**systemd:**
+```bash
+cd tg-media-bot
+git pull
+cargo build --release
+sudo install -m755 target/release/tg-media-bot /usr/local/bin/
+sudo systemctl restart tg-media-bot
+```
+</details>
 
-## Install with Nix
+---
+
+## Команды бота
+
+| Команда | Описание |
+|---|---|
+| *ссылка на медиа* | Бот предложит выбрать качество и добавит задачу в очередь |
+| `/start`, `/lang` | Выбор языка интерфейса (RU, UK, EN, ES) |
+| `/help` | Справка по возможностям и текущим лимитам сервера |
+| `/quality` | Зафиксировать предпочтительное качество по умолчанию или вернуть запрос на каждое сообщение |
+| `/formats <ссылка>` | Запросить выбор качества принудительно (даже если сохранено качество по умолчанию) |
+| `/status` | Состояние вашей очереди и ID активных загрузок |
+| `/cancel [id]` / `/cancel all` | Отменить конкретную загрузку или всю свою очередь |
+| `/clear [n]` | Очистить последние `n` сообщений бота в чате (по умолчанию 100) |
+| `/minimal on\|off` | Минималистичный режим (без статусов прогресса и подробных подписей) |
+| `/topic lock\|unlock\|status` | Привязать работу бота к конкретной теме супергруппы (форума) |
+| `/stats`, `/admin` | Мониторинг потребления CPU, памяти, диска и очередей *(только для админов)* |
+| `/cleancache` | Принудительная очистка кэша сохраненных `file_id` *(только для админов)* |
+| `/broadcast <текст>` | Рассылка системного сообщения по всем активным чатам *(только для админов)* |
+
+### Работа в группах
+Когда разрешенный пользователь (`ALLOWED_USERS`) пишет боту в группе, группа активируется, и ботом могут пользоваться все ее участники. Чтобы бот автоматически реагировал на ссылки без необходимости тегать его через `@`, отключите **Group Privacy** в настройках бота у [@BotFather](https://t.me/BotFather).
+
+---
+
+## Основные параметры конфигурации (`.env`)
+
+Подробные комментарии ко всем опциям находятся в файле [.env.example](.env.example).
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `BOT_TOKEN` | — | Токен Telegram-бота |
+| `ALLOWED_USERS` | — | ID пользователей с доступом (через запятую) |
+| `ADMIN_USERS` | — | ID администраторов бота (статистика, рассылки) |
+| `MAX_PARALLEL_DOWNLOADS` | `1` | Число одновременных загрузок на весь бот |
+| `USER_QUEUE_SIZE` | `100` | Максимальный размер персональной очереди пользователя |
+| `RATE_LIMIT_PER_USER` | `1` | Сколько ссылок одного пользователя качаются параллельно |
+| `MAX_QUEUE_SIZE` | `1000` | Максимальный размер общей очереди бота |
+| `MAX_FILE_SIZE_MB` | лимит API | Максимальный размер файла (качество подбирается под лимит) |
+| `MAX_DURATION_MIN` | `180` | Максимальная длительность видео в минутах (0 — без лимита) |
+| `MAX_HEIGHT` | `1080` | Ограничение максимальной высоты видео (1080p, 720p и т.д.) |
+| `MIN_FREE_DISK_MB` | `300` | Минимальный остаток свободного диска для старта загрузки |
+| `CHILD_NICE` | `10` | Приоритет процессов `yt-dlp` и `ffmpeg` (0 — обычный, 19 — минимальный) |
+| `BLOCK_PRIVATE_URLS` | `true` | Блокировать ссылки на локальные сети и `localhost` |
+| `PROXY_URL` | — | Прокси для обхода региональных ограничений (SOCKS5 / HTTP) |
+
+---
+
+## Авторизация и Cookies
+
+Для скачивания контента из закрытых аккаунтов или сервисов, требующих авторизации (например, Instagram или 18+ ролики на YouTube):
+
+1. Экспортируйте cookies в формате Netscape (`cookies.txt`) с помощью расширения браузера (например, *Get cookies.txt LOCALLY*).
+2. Поместите файл в папку `./cookies/cookies.txt` рядом с `docker-compose.yml`.
+3. Контейнер автоматически подхватит файл при следующей загрузке.
+
+---
+
+## Плагины для нестандартных сайтов
+
+Если вам требуется скачивать медиа с ресурса, который не поддерживается `yt-dlp`, добавьте исполняемый скрипт в каталог `./plugins`.
+
+- Плагин может быть написан на любом языке (Python, Bash, Node.js, Go и др.).
+- Он принимает ссылку первым аргументом командной строки и возвращает прямую ссылку на поток либо JSON с заголовками.
+- Пример реализации доступен в [examples/plugin-example.py](examples/plugin-example.py).
+
+---
+
+## Тестирование и диагностика
+
+Вы можете протестировать извлечение и загрузку видео напрямую в консоли контейнера без взаимодействия с Telegram:
 
 ```bash
-nix run github:antlis/tg-media-bot        # BOT_TOKEN etc. from the environment
-nix build .#with-browser                  # + headless-Chromium fallback (large)
-nix develop                               # dev shell with deps + pytest
+docker compose run --rm bot fetch "https://youtu.be/..."          # тест видео
+docker compose run --rm bot fetch "https://youtu.be/..." audio    # тест аудио
+docker compose run --rm bot fetch "https://youtu.be/..." 480      # ограничение разрешения
 ```
 
-`yt-dlp` and `ffmpeg` are put on the bot's `PATH` by the wrapper; yt-dlp comes
-from nixpkgs, so bump it with `nix flake update`. For home-manager, import
-`homeManagerModules.default` and enable `services.tg-media-bot` — it runs a user
-service, keeps state under `~/.local/state/tg-media-bot`, and reads `BOT_TOKEN`
-from `environmentFile` (extra env vars go in `settings`). `nix flake check`
-builds the package and runs the test suite.
+---
 
-The local Bot API server (2 GB uploads) is a separate service — keep it in the
-compose file (`docker compose up -d telegram-bot-api`) or run nixpkgs'
-`telegram-bot-api`, then set `API_SERVER_URL`. Don't run the Docker `bot` and
-the Nix bot at once — they'd poll the same token.
+## Лицензия
 
-## Configuration
-
-All settings are loaded from `.env` (see `src/config/settings.py`).
-
-| Variable | Required | Default | Purpose |
-|----------|----------|---------|---------|
-| `BOT_TOKEN` | yes | — | Telegram bot token from @BotFather |
-| `TELEGRAM_API_ID` | Docker only | — | From my.telegram.org/apps; used by the local Bot API server |
-| `TELEGRAM_API_HASH` | Docker only | — | From my.telegram.org/apps; used by the local Bot API server |
-| `ALLOWED_USERS` | recommended | empty (open) | Comma-separated Telegram user IDs allowed to use the bot |
-| `API_SERVER_URL` | no | empty | Local Bot API base URL; set automatically in Docker |
-| `TEMP_DIR` | no | `/tmp/tg-media-bot` | Working directory for downloads |
-| `MAX_PARALLEL_DOWNLOADS` | no | `3` | Global concurrent download limit |
-| `RATE_LIMIT_PER_USER` | no | `2` | Concurrent downloads per user |
-| `DOWNLOAD_TIMEOUT` | no | `3600` | Per-download timeout in seconds |
-| `LOG_LEVEL` | no | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
-| `LOG_FILE` | no | empty (`/data/...` in Docker) | Persist logs to a rotating file for a durable download record |
-| `USE_BROWSER_COOKIES` | no | `true` | Use browser cookies (forced off in Docker) |
-| `BROWSER_NAME` | no | `firefox` | Browser to read cookies from |
-| `COOKIES_FILE` | no | empty | Path to a Netscape `cookies.txt` for authenticated downloads; takes precedence over browser cookies when present (the Docker way to auth) |
-| `ALLOWED_CHATS_FILE` | no | empty | Path to a JSON file persisting group chats an allowed user has activated the bot in |
-| `TOPIC_LOCK_FILE` | no | empty | Path to a JSON file persisting per-chat forum-topic locks set via `/topic lock` |
-| `MEDIA_CACHE_FILE` | no | empty | Path to a JSON file caching `file_id`s so repeat URLs are resent instantly |
-| `PROXY_URL` | no | empty | Proxy used **only** as a fallback retry when a download fails with a geo/region block (`socks5h://…` or `http://…`) |
-| `ENABLE_BROWSER_FALLBACK` | no | `true` | Try the headless-browser fallback when no yt-dlp extractor can handle a page (needs Chromium in the image — see `INSTALL_BROWSER`) |
-| `BROWSER_FALLBACK_TIMEOUT` | no | `45` | Seconds the fallback waits for the page to load and start playing |
-| `BOT_API_HOST_PORT` | no | `8082` | Docker only: host port for the local Bot API server |
-| `YTDLP_AUTO_UPDATE` | no | `true` | Docker only: refresh yt-dlp to the latest release on container start |
-
-The headless-browser fallback needs a Chromium binary in the image, which is **opt-in** (it adds ~450 MB). Build with it by setting `INSTALL_BROWSER=true` in `.env` before `docker compose build` (the compose file forwards it as the `INSTALL_BROWSER` build arg), or `docker build --build-arg INSTALL_BROWSER=true`. On the bare-Python/AUR install, run `playwright install chromium` once. Without Chromium the fallback simply no-ops and the bot reports the original failure.
-
-## Access Control
-
-The bot is gated by `ALLOWED_USERS`. An `outer_middleware` on every message (`src/bot/router.py`) checks `from_user.id` against the allowlist **before any handler runs**:
-
-- **Empty / unset** → open to everyone.
-- **Set** → only listed IDs are served; others get a denial reply and are logged.
-
-`ALLOWED_USERS` is read at startup. To add a user, append their ID and restart:
-
-```bash
-docker compose up -d bot   # no rebuild needed — .env is read on start
-```
-
-To find a user's numeric ID, have them message [@userinfobot](https://t.me/userinfobot).
-
-### Use in groups
-
-The bot also works in group chats. When an allowed user uses it inside a group, that group is **activated** — its other members can then use the bot there too, without being individually allowlisted. Set `ALLOWED_CHATS_FILE` to persist activated groups across restarts (in Docker this defaults to `/data/allowed_chats.json` on the `bot-logs` volume); leave it unset to keep them in memory only.
-
-**Required one-time setup:** Telegram bots ship with "group privacy" enabled, which stops the Bot API from forwarding plain messages (like a pasted link) sent in a group — only commands, @mentions, and replies to the bot get through. To let people just paste a link, disable it: message [@BotFather](https://t.me/BotFather) → `/mybots` → your bot → **Bot Settings** → **Group Privacy** → **Turn off**, then remove and re-add the bot to any group it's already in (the change doesn't apply retroactively to existing memberships).
-
-**Forum topics:** in a group with topics enabled, every reply (status messages, the downloaded file) is posted into whichever topic the request came from — never "General" — so different topics can be used for different purposes without their results bleeding into each other. To confine the bot to one topic per group (e.g. a "bots" topic, ignoring everything posted elsewhere), send `/topic lock` **from inside that topic**. `/topic unlock` lifts the restriction, and `/topic status` shows the current lock. This is per-chat, so different groups can each lock to their own topic (or not lock at all). `/topic` itself always works regardless of the current lock, so a chat can't get stuck; set `TOPIC_LOCK_FILE` to persist locks across restarts.
-
-### Authenticated downloads (cookies)
-
-Some sources (Instagram, age-restricted videos, etc.) need a logged-in session. Two options:
-
-- **Bare Python:** set `USE_BROWSER_COOKIES=true` and `BROWSER_NAME` to pull cookies from your local browser.
-- **Docker:** export a Netscape `cookies.txt`, drop it in `./cookies/`, and it's used per-download (`COOKIES_FILE=/cookies/cookies.txt`, mounted by `docker-compose.yml`). A present `cookies.txt` takes precedence over browser cookies.
-
-## Logs & Download History
-
-By default the bot logs to stdout (`docker compose logs bot`), which resets when the container is recreated. Set `LOG_FILE` to also persist logs to a rotating file. In Docker this is wired by default to `/data/tg-media-bot.log` on the named `bot-logs` volume, so the record of every download (timestamp, user ID, URL, platform, filename, size) **survives restarts and rebuilds**.
-
-```bash
-# Tail the persistent log
-docker compose exec bot tail -f /data/tg-media-bot.log
-
-# Just the completed downloads
-docker compose exec bot grep "Download completed" /data/tg-media-bot.log
-```
-
-Rotation keeps ~110 MB of history (10 × 10 MB files). For a privacy-minded setup, set `LOG_LEVEL=WARNING` to stop recording URLs/user IDs.
-
-## Bot Commands
-
-Send the bot any media **URL** (or up to 3 URLs in one message) and it downloads and returns the file. The active format mode (video/audio) applies to each download.
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message |
-| `/help` | Show help and the list of supported platforms |
-| `/audio` | Switch to audio-only mode — downloads are converted to MP3 |
-| `/video` | Switch to video mode (default) — includes video when available |
-| `/formats <url>` | Show inline buttons to pick a download quality (Best / 1080p / 720p / 480p / Audio) |
-| `/status` | Show your queued/active downloads and their task IDs |
-| `/cancel <task_id>` | Cancel one of your active downloads (get the ID from `/status`) |
-| `/minimal on\|off` | Toggle minimal UI for this chat — no status/progress messages, no caption on media |
-| `/topic lock\|unlock\|status` | Restrict the bot to one forum topic in this group (see [Use in groups](#use-in-groups)) |
-
-Notes:
-- `/audio` and `/video` set a **per-user** preference that persists until changed.
-- A download is queued per URL; `/status` reports each one's task ID, which `/cancel` consumes.
-- Per-user concurrency is bounded by `RATE_LIMIT_PER_USER`; the global cap is `MAX_PARALLEL_DOWNLOADS`.
-- **Audio posts** are a single message: the MP3 with embedded cover art, an album-art thumbnail in the player, title/artist/duration tags, and the source URL in the caption. (Telegram doesn't allow a standalone photo and an audio file in one post, so the cover rides along as the player thumbnail.)
-- **SoundCloud links are always audio** — no need to send `/audio` first.
-- **Every post** includes the original source URL as monospace, non-linked text — copyable, but Telegram won't turn it into a link or fetch a preview.
-
-See [Command Reference](COMMANDS.md) for full examples and sample responses.
-
-## Testing
-
-The test suite uses `pytest` (with `pytest-asyncio`) and covers the pure-logic units — config parsing, sanitization, URL extraction, platform detection, yt-dlp command building, the caption builder, the allowlist middleware, the queue, and ffmpeg thumbnail resizing. No network or Telegram access is required; downloads and `get_info` are mocked.
-
-```bash
-# In a virtualenv with dev deps
-pip install -r requirements-dev.txt
-pytest
-
-# Or, without managing a venv (uses uv)
-uv run --with pytest --with pytest-asyncio --with aiogram --with structlog \
-       --with python-dotenv --with aiohttp pytest
-```
-
-The thumbnail tests need `ffmpeg` on PATH; they're skipped automatically if it's missing. yt-dlp is not required — the version probe is patched out in tests.
-
-## Documentation
-
-- [Architecture Overview](ARCHITECTURE.md)
-- [Installation Guide](INSTALLATION.md)
-- [Command Reference](COMMANDS.md)
-- [Troubleshooting](TROUBLESHOOTING.md)
-- [Contributor guide for AI agents](CLAUDE.md)
-
-Downloads that use HLS/DASH fragments are fetched in parallel
-(`CONCURRENT_FRAGMENTS`, default 16). This is faster and lets a download finish
-before sites that expire segment URLs shortly after issuing them invalidate
-them; if a high-resolution file still can't complete in that window, the bot
-automatically retries at progressively lower quality.
-
-## Custom extractor plugins
-
-Some sites build their media URL in JavaScript or hide it behind a site-specific
-API, so neither yt-dlp nor the headless-browser fallback can reach it. You can
-teach the bot about such a site with a **plugin**: a small Python file that turns
-a page URL into a media URL yt-dlp can download.
-
-Drop `.py` files into a plugin directory — the `./plugins` folder mounted into the
-container by default (`PLUGIN_DIR=/plugins`), or any directory named by the
-`PLUGIN_DIR` env var on a bare-metal install. Each plugin exposes two callables:
-
-```python
-def match(url: str) -> bool: ...     # claim the URLs you handle
-async def resolve(url: str): ...     # -> media_url | (media_url, referer) | ResolveResult | None
-```
-
-For a URL a plugin claims, its resolver runs **before** yt-dlp; the returned URL
-then goes through the normal download / recode / upload path. A plugin that
-returns `None` or raises is skipped, falling through to yt-dlp and the
-headless-browser fallback. See [`examples/plugin_example.py`](examples/plugin_example.py)
-for a complete template.
-
-A resolver may also assemble a playlist itself and return a local `file://`
-URL (e.g. after rewriting a site's rotating segment hosts) — the bot enables
-yt-dlp to read it automatically.
-
-Plugins are **not committed** — the `plugins/` directory is gitignored, so
-site-specific extractors stay private to your deployment. Set `ENABLE_PLUGINS=false`
-to ignore the directory entirely.
+Проект распространяется под лицензией [MIT](LICENSE).
