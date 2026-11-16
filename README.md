@@ -113,6 +113,21 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tg-media-bot
 ```
 </details>
 
+<details>
+<summary><b>Install with Nix</b></summary>
+
+```bash
+nix run github:antlis/tg-media-bot        # BOT_TOKEN etc. come from the environment
+nix develop                              # dev shell: cargo + yt-dlp + ffmpeg + deno
+```
+
+For home-manager, import `homeManagerModules.default` and enable
+`services.tg-media-bot` — it runs a user service, keeps state under
+`~/.local/state/tg-media-bot`, and reads `BOT_TOKEN` from `environmentFile`
+(extra env vars go in `settings`). Don't run the Nix bot and the Docker `bot`
+container on the same token at once — they'd poll the same token.
+</details>
+
 
 ---
 
@@ -144,6 +159,11 @@ git pull
 cargo build --release
 sudo install -m755 target/release/tg-media-bot /usr/local/bin/
 sudo systemctl restart tg-media-bot
+```
+
+**Nix:**
+```bash
+nix run github:antlis/tg-media-bot   # flakes pin nixpkgs; `nix flake update` bumps them
 ```
 
 </details>
