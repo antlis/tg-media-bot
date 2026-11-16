@@ -1,93 +1,94 @@
 # tg-media-bot
 
-Быстрый, легковесный и надежный self-hosted Telegram-бот на Rust для скачивания видео и аудио из социальных сетей и видеохостингов с отправкой прямо в чат Telegram.
+[![CI](https://github.com/antlis/tg-media-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/antlis/tg-media-bot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Бот спроектирован с упором на максимальную производительность и бережное отношение к ресурсам: потребляет около **4,5 МБ RAM** в простое, строго контролирует дочерние процессы, защищает сервер от перегрузок и OOM, а также поддерживает отправку файлов размером до **2 ГБ**.
+**🌐 [Website & overview](https://antlis.is-a.dev/tg-media-bot/)**
 
----
+A fast, lightweight and reliable self-hosted Telegram bot written in **Rust** that downloads video and audio from social networks and video hosting sites and sends it straight back into the chat.
 
-## Возможности
-
-- ⚡ **Высокая скорость и низкое потребление памяти** — ядро на Rust с асинхронным рантаймом. Даже на минимальных тарифах VPS бот работает стабильно и не зависает.
-- 📦 **Файлы до 2 ГБ** — благодаря встроенному локальному серверу Telegram Bot API бот обходит стандартное ограничение Telegram в 50 МБ и отправляет тяжелые видео в высоком качестве.
-- 🎯 **Выбор качества** — интерактивные кнопки при отправке ссылки (максимум, 1080p, 720p, 480p, 360p или только аудио). Выбор можно зафиксировать командой `/quality`.
-- 🚀 **Умный кэш (Instant Delivery)** — мгновенная отдача ранее загруженных видео по `file_id` без повторного скачивания и ожидания. Бот нормализует ссылки (YouTube Shorts, посты X/Twitter и т.д.) и определяет дубликаты до старта загрузки.
-- 🧹 **Чистая лента (Clean Chat)** — сервисные сообщения («Качаем...»), меню качества и исходное сообщение пользователя со ссылкой автоматически удаляются после успешной отправки медиафайла. Ссылка на оригинал и название сохраняются в описании к файлу.
-- 👥 **Справедливая очередь** — личная очередь для каждого пользователя с защитой от блокировки бота одним спамером.
-- 🌐 **Мультиязычность** — русский, украинский, английский и испанский языки с автоопределением по клиенту Telegram и командой смены языка `/lang`.
-- 🛡️ **Безопасность** — белый список пользователей (`ALLOWED_USERS`), защита от SSRF (блокировка запросов к локальным сетям и localhost).
+The bot is built for maximum performance and minimal resource use: it idles at around **4.5 MB RAM**, strictly supervises child processes, protects the server from overload and OOM, and supports sending files up to **2 GB**.
 
 ---
 
-## Поддерживаемые сайты
+## Features
 
-Бот поддерживает более **1000+ сервисов** благодаря движку `yt-dlp`, в том числе:
+- ⚡ **High speed, low memory** — Rust core with an async runtime. The bot stays stable even on the cheapest VPS plans.
+- 📦 **Files up to 2 GB** — a bundled local Telegram Bot API server bypasses the standard 50 MB limit, so heavy videos arrive in full quality.
+- 🎯 **Quality picker** — interactive buttons whenever you send a link (max, 1080p, 720p, 480p, 360p, or audio-only). Pin a default with `/quality`.
+- 🚀 **Smart cache (instant delivery)** — previously downloaded media is resent instantly by `file_id`, with no re-download. Links are normalized (YouTube Shorts, X/Twitter posts, …) so duplicates are detected before a download even starts.
+- 🧹 **Clean chat** — service messages ("Downloading…"), the quality menu and the original link message are deleted after a successful upload; the source link and title stay in the file caption.
+- 👥 **Fair queueing** — a personal queue per user, so one spammer can't lock everyone else out.
+- 🌐 **Multilingual** — Russian, Ukrainian, English and Spanish, auto-detected from the Telegram client and switchable via `/lang`.
+- 🛡️ **Security** — user allowlist (`ALLOWED_USERS`), SSRF protection (requests to private networks and `localhost` are blocked).
 
-- **YouTube** (видео, Shorts, плейлисты, YouTube Music)
-- **TikTok** (видео и звук)
-- **Instagram** (Reels, публикации, истории)
-- **X (Twitter)** (видео и GIF)
-- **Reddit** (видео со звуком)
+---
+
+## Supported sites
+
+Thanks to the `yt-dlp` engine the bot supports **1000+ services**, including:
+
+- **YouTube** (videos, Shorts, playlists, YouTube Music)
+- **TikTok** (video and sound)
+- **Instagram** (Reels, posts, stories)
+- **X (Twitter)** (video and GIFs)
+- **Reddit** (video with sound)
 - **VK & Rutube**
-- **Twitch** (клипы и записи стримов)
-- **Vimeo, SoundCloud, Pinterest** и многие другие
+- **Twitch** (clips and VODs)
+- **Vimeo, SoundCloud, Pinterest** and many more
 
-*Если нужного сайта нет в yt-dlp, бот поддерживает подключение собственных внешних плагинов.*
+*If a site isn't supported by yt-dlp, the bot can be extended with external plugins.*
 
 ---
 
-## Быстрый старт на VPS (Docker)
+## Quick start on a VPS (Docker)
 
-Для хостинга бота подойдет любой сервер с Linux (Ubuntu / Debian).
+Any server running Linux (Ubuntu / Debian) is fine.
 
-> 💡 **Где арендовать VPS:** недорогой и надежный сервер можно взять на [HandyHost (HSHP)](https://hshp.host/?from=12995). Для работы бота с запасом хватит базового тарифа с **1 vCPU и 1–2 ГБ RAM**.
+### Install in 5 steps
 
-### Установка в 5 шагов:
-
-1. **Подключитесь к VPS по SSH:**
+1. **Connect to your server over SSH:**
    ```bash
-   ssh root@ip_вашего_сервера
+   ssh root@your.server.ip
    ```
 
-2. **Установите Docker** (если еще не установлен):
+2. **Install Docker** (if not installed yet):
    ```bash
    curl -fsSL https://get.docker.com | sh
    ```
 
-3. **Создайте каталог бота и скачайте конфиги:**
+3. **Create a bot directory and download the configs:**
    ```bash
    mkdir -p tg-media-bot && cd tg-media-bot
-   curl -fSL https://raw.githubusercontent.com/olluorg/tg-media-bot/master/docker-compose.yml -o docker-compose.yml
-   curl -fSL https://raw.githubusercontent.com/olluorg/tg-media-bot/master/.env.example -o .env
+   curl -fSL https://raw.githubusercontent.com/antlis/tg-media-bot/master/docker-compose.yml -o docker-compose.yml
+   curl -fSL https://raw.githubusercontent.com/antlis/tg-media-bot/master/.env.example -o .env
    ```
 
-4. **Заполните `.env`:**
+4. **Fill in `.env`:**
    ```bash
    nano .env
    ```
-   Минимально необходимые параметры:
-   - `BOT_TOKEN` — токен бота от [@BotFather](https://t.me/BotFather).
-   - `ALLOWED_USERS` — ваш ID в Telegram через запятую (узнать в [@userinfobot](https://t.me/userinfobot)), чтобы ботом пользовались только вы или ваши друзья. Если оставить пустым — доступ открыт всем.
-   - `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` — с [my.telegram.org/apps](https://my.telegram.org/apps). Нужны для отправки файлов до **2 ГБ** через локальный Bot API.
+   Minimum required settings:
+   - `BOT_TOKEN` — bot token from [@BotFather](https://t.me/BotFather).
+   - `ALLOWED_USERS` — your Telegram ID(s), comma-separated (find yours via [@userinfobot](https://t.me/userinfobot)), so only you or your friends can use the bot. Leave empty to open access to everyone.
+   - `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` — from [my.telegram.org/apps](https://my.telegram.org/apps). Needed for uploads up to **2 GB** via the local Bot API server.
 
-   > 💡 **Упрощенный запуск без API ID/Hash (лимит файлов 50 МБ):**  
-   > Если файлы больше 50 МБ не нужны, удалите из `docker-compose.yml` сервис `telegram-bot-api` и строки `API_SERVER_URL` / `LOCAL_API_SHARED_FILES`. В таком случае потребуются только `BOT_TOKEN` и `ALLOWED_USERS`.
+   > 💡 **Simplified run without API ID/Hash (50 MB file limit):**
+   > If you don't need files larger than 50 MB, remove the `telegram-bot-api` service and the `API_SERVER_URL` / `LOCAL_API_SHARED_FILES` lines from `docker-compose.yml`. Only `BOT_TOKEN` and `ALLOWED_USERS` are required then.
 
-5. **Запустите бота:**
+5. **Start the bot:**
    ```bash
    docker compose up -d
    docker compose logs -f bot
    ```
 
----
-
-### Альтернативные способы запуска
+### Alternative ways to run
 
 <details>
-<summary><b>Сборка локально из исходников (Docker)</b></summary>
+<summary><b>Build locally from source (Docker)</b></summary>
 
 ```bash
-git clone https://github.com/olluorg/tg-media-bot.git
+git clone https://github.com/antlis/tg-media-bot.git
 cd tg-media-bot
 cp .env.example .env
 nano .env
@@ -97,9 +98,9 @@ docker compose logs -f bot
 </details>
 
 <details>
-<summary><b>Запуск без Docker (systemd)</b></summary>
+<summary><b>Run without Docker (systemd)</b></summary>
 
-Требуются установленные `yt-dlp`, `ffmpeg`, `ffprobe` в `PATH`, а также `deno` для YouTube:
+Requires `yt-dlp`, `ffmpeg`, `ffprobe` on `PATH`, plus `deno` for YouTube:
 
 ```bash
 cargo build --release
@@ -110,22 +111,39 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tg-media-bot
 ```
 </details>
 
+<details>
+<summary><b>Install with Nix</b></summary>
+
+```bash
+nix run github:antlis/tg-media-bot        # BOT_TOKEN etc. come from the environment
+nix develop                              # dev shell: cargo + yt-dlp + ffmpeg + deno
+```
+
+For home-manager, import `homeManagerModules.default` and enable
+`services.tg-media-bot` — it runs a user service, keeps state under
+`~/.local/state/tg-media-bot`, and reads `BOT_TOKEN` from `environmentFile`
+(extra env vars go in `settings`). `nix flake check` builds the package.
+Don't run the Nix bot and the Docker `bot` container on the same token at
+once — they'd poll the same token.
+</details>
+
 ---
 
-## Обновление бота
+## Updating the bot
 
-Если бот запущен через **Docker Compose** (стандартный способ):
+If the bot runs via **Docker Compose** (the standard way):
 
 ```bash
 cd tg-media-bot
 docker compose pull && docker compose up -d
 ```
-> *Примечание: движок `yt-dlp` внутри контейнера также обновляется автоматически раз в сутки (когда нет активных загрузок).*
+
+> *Note: the `yt-dlp` engine inside the container also updates itself automatically once a day (when no downloads are active).*
 
 <details>
-<summary><b>При установке из исходников</b></summary>
+<summary><b>When installed from source</b></summary>
 
-**Docker (локальная сборка):**
+**Docker (local build):**
 ```bash
 cd tg-media-bot
 git pull
@@ -140,88 +158,94 @@ cargo build --release
 sudo install -m755 target/release/tg-media-bot /usr/local/bin/
 sudo systemctl restart tg-media-bot
 ```
+
+**Nix:**
+```bash
+nix run github:antlis/tg-media-bot   # flakes pin nixpkgs; `nix flake update` bumps them
+```
 </details>
 
 ---
 
-## Команды бота
+## Bot commands
 
-| Команда | Описание |
+| Command | Description |
 |---|---|
-| *ссылка на медиа* | Бот предложит выбрать качество и добавит задачу в очередь |
-| `/start`, `/lang` | Выбор языка интерфейса (RU, UK, EN, ES) |
-| `/help` | Справка по возможностям и текущим лимитам сервера |
-| `/quality` | Зафиксировать предпочтительное качество по умолчанию или вернуть запрос на каждое сообщение |
-| `/formats <ссылка>` | Запросить выбор качества принудительно (даже если сохранено качество по умолчанию) |
-| `/status` | Состояние вашей очереди и ID активных загрузок |
-| `/cancel [id]` / `/cancel all` | Отменить конкретную загрузку или всю свою очередь |
-| `/clear [n]` | Очистить последние `n` сообщений бота в чате (по умолчанию 100) |
-| `/minimal on\|off` | Минималистичный режим (без статусов прогресса и подробных подписей) |
-| `/topic lock\|unlock\|status` | Привязать работу бота к конкретной теме супергруппы (форума) |
-| `/stats`, `/admin` | Мониторинг потребления CPU, памяти, диска и очередей *(только для админов)* |
-| `/cleancache` | Принудительная очистка кэша сохраненных `file_id` *(только для админов)* |
-| `/broadcast <текст>` | Рассылка системного сообщения по всем активным чатам *(только для админов)* |
+| *a media link* | The bot offers a quality choice and queues the download |
+| `/start`, `/lang` | Pick the interface language (RU, UK, EN, ES) |
+| `/help` | Overview of features and the server's current limits |
+| `/quality` | Pin a default quality (or go back to asking per message) |
+| `/formats <link>` | Force a quality choice (even if a default is saved) |
+| `/status` | Your queue state and active download IDs |
+| `/cancel [id]` / `/cancel all` | Cancel one download or your whole queue |
+| `/clear [n]` | Delete the bot's last `n` messages in the chat (default 100) |
+| `/minimal on\|off` | Minimalist mode (no progress statuses or verbose captions) |
+| `/topic lock\|unlock\|status` | Restrict the bot to one forum topic in a supergroup |
+| `/stats`, `/admin` | CPU, memory, disk and queue monitoring *(admins only)* |
+| `/cleancache` | Force-clear the saved `file_id` cache *(admins only)* |
+| `/broadcast <text>` | Send a system message to all active chats *(admins only)* |
 
-### Работа в группах
-Когда разрешенный пользователь (`ALLOWED_USERS`) пишет боту в группе, группа активируется, и ботом могут пользоваться все ее участники. Чтобы бот автоматически реагировал на ссылки без необходимости тегать его через `@`, отключите **Group Privacy** в настройках бота у [@BotFather](https://t.me/BotFather).
+### Groups
+
+When an allowed user (`ALLOWED_USERS`) messages the bot in a group, the group is activated and all its members can use the bot. So the bot reacts to plain links without an `@` mention, turn off **Group Privacy** in the bot's settings via [@BotFather](https://t.me/BotFather).
 
 ---
 
-## Основные параметры конфигурации (`.env`)
+## Main configuration (`.env`)
 
-Подробные комментарии ко всем опциям находятся в файле [.env.example](.env.example).
+Detailed comments for every option live in [.env.example](.env.example).
 
-| Переменная | По умолчанию | Описание |
+| Variable | Default | Description |
 |---|---|---|
-| `BOT_TOKEN` | — | Токен Telegram-бота |
-| `ALLOWED_USERS` | — | ID пользователей с доступом (через запятую) |
-| `ADMIN_USERS` | — | ID администраторов бота (статистика, рассылки) |
-| `MAX_PARALLEL_DOWNLOADS` | `1` | Число одновременных загрузок на весь бот |
-| `USER_QUEUE_SIZE` | `100` | Максимальный размер персональной очереди пользователя |
-| `RATE_LIMIT_PER_USER` | `1` | Сколько ссылок одного пользователя качаются параллельно |
-| `MAX_QUEUE_SIZE` | `1000` | Максимальный размер общей очереди бота |
-| `MAX_FILE_SIZE_MB` | лимит API | Максимальный размер файла (качество подбирается под лимит) |
-| `MAX_DURATION_MIN` | `180` | Максимальная длительность видео в минутах (0 — без лимита) |
-| `MAX_HEIGHT` | `1080` | Ограничение максимальной высоты видео (1080p, 720p и т.д.) |
-| `MIN_FREE_DISK_MB` | `300` | Минимальный остаток свободного диска для старта загрузки |
-| `CHILD_NICE` | `10` | Приоритет процессов `yt-dlp` и `ffmpeg` (0 — обычный, 19 — минимальный) |
-| `BLOCK_PRIVATE_URLS` | `true` | Блокировать ссылки на локальные сети и `localhost` |
-| `PROXY_URL` | — | Прокси для обхода региональных ограничений (SOCKS5 / HTTP) |
+| `BOT_TOKEN` | — | Telegram bot token |
+| `ALLOWED_USERS` | — | Comma-separated user IDs with access |
+| `ADMIN_USERS` | — | Bot admin IDs (stats, broadcast) |
+| `MAX_PARALLEL_DOWNLOADS` | `1` | Simultaneous downloads for the whole bot |
+| `USER_QUEUE_SIZE` | `100` | Max personal queue size per user |
+| `RATE_LIMIT_PER_USER` | `1` | How many of one user's links download at once |
+| `MAX_QUEUE_SIZE` | `1000` | Max size of the shared bot-wide queue |
+| `MAX_FILE_SIZE_MB` | API limit | Largest file to send (quality is stepped down to fit) |
+| `MAX_DURATION_MIN` | `180` | Longest media duration in minutes (0 — no limit) |
+| `MAX_HEIGHT` | `1080` | Max video height (1080p, 720p, …) |
+| `MIN_FREE_DISK_MB` | `300` | Minimum free disk before a download may start |
+| `CHILD_NICE` | `10` | `yt-dlp`/`ffmpeg` process priority (0 — normal, 19 — lowest) |
+| `BLOCK_PRIVATE_URLS` | `true` | Block links to private networks and `localhost` |
+| `PROXY_URL` | — | Proxy for bypassing regional blocks (SOCKS5 / HTTP) |
 
 ---
 
-## Авторизация и Cookies
+## Auth & cookies
 
-Для скачивания контента из закрытых аккаунтов или сервисов, требующих авторизации (например, Instagram или 18+ ролики на YouTube):
+To download from private accounts or services that require login (e.g. Instagram or age-restricted YouTube):
 
-1. Экспортируйте cookies в формате Netscape (`cookies.txt`) с помощью расширения браузера (например, *Get cookies.txt LOCALLY*).
-2. Поместите файл в папку `./cookies/cookies.txt` рядом с `docker-compose.yml`.
-3. Контейнер автоматически подхватит файл при следующей загрузке.
-
----
-
-## Плагины для нестандартных сайтов
-
-Если вам требуется скачивать медиа с ресурса, который не поддерживается `yt-dlp`, добавьте исполняемый скрипт в каталог `./plugins`.
-
-- Плагин может быть написан на любом языке (Python, Bash, Node.js, Go и др.).
-- Он принимает ссылку первым аргументом командной строки и возвращает прямую ссылку на поток либо JSON с заголовками.
-- Пример реализации доступен в [examples/plugin-example.py](examples/plugin-example.py).
+1. Export cookies in Netscape format (`cookies.txt`) with a browser extension (e.g. *Get cookies.txt LOCALLY*).
+2. Put the file at `./cookies/cookies.txt` next to `docker-compose.yml`.
+3. The container picks it up on the next download.
 
 ---
 
-## Тестирование и диагностика
+## Plugins for unsupported sites
 
-Вы можете протестировать извлечение и загрузку видео напрямую в консоли контейнера без взаимодействия с Telegram:
+If you need media from a site `yt-dlp` doesn't support, drop an executable script into `./plugins`:
+
+- A plugin can be written in any language (Python, Bash, Node.js, Go, …).
+- It receives the link as its first CLI argument and prints a direct stream URL or JSON with headers.
+- See [examples/plugin-example.py](examples/plugin-example.py).
+
+---
+
+## Testing & diagnostics
+
+You can test extraction and download right from the container console, without touching Telegram:
 
 ```bash
-docker compose run --rm bot fetch "https://youtu.be/..."          # тест видео
-docker compose run --rm bot fetch "https://youtu.be/..." audio    # тест аудио
-docker compose run --rm bot fetch "https://youtu.be/..." 480      # ограничение разрешения
+docker compose run --rm bot fetch "https://youtu.be/..."        # video
+docker compose run --rm bot fetch "https://youtu.be/..." audio   # audio
+docker compose run --rm bot fetch "https://youtu.be/..." 480     # resolution cap
 ```
 
 ---
 
-## Лицензия
+## License
 
-Проект распространяется под лицензией [MIT](LICENSE).
+Released under the [MIT](LICENSE) license.

@@ -44,9 +44,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # `docker compose up` pulls the prebuilt image from GHCR; `up --build`
+  # builds from this checkout instead (for local dev / unreleased changes).
   bot:
+    image: ghcr.io/antlis/tg-media-bot:edge
     build: .
-    image: tg-media-bot:local
     env_file: .env
     environment:
       API_SERVER_URL: http://telegram-bot-api:8081
