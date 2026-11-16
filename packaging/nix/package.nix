@@ -10,7 +10,7 @@
 rustPlatform.buildRustPackage {
   pname = "tg-media-bot";
   # Keep in sync with Cargo.toml (and release tags).
-  version = "1.0.6";
+  version = "1.0.9";
 
   src = lib.fileset.toSource {
     root = ../..;
