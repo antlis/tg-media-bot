@@ -5,6 +5,8 @@
 
 **🌐 [Website & overview](https://antlis.is-a.dev/tg-media-bot/)**
 
+[**English**](README.md) · [Русский](docs/README.ru.md) · [Українська](docs/README.uk.md) · [Español](docs/README.es.md)
+
 ![Demo](assets/demo.gif)
 
 A fast, lightweight and reliable self-hosted Telegram bot written in **Rust** that downloads video and audio from social networks and video hosting sites and sends it straight back into the chat.
