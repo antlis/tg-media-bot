@@ -74,6 +74,8 @@ pub struct SavedJob {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct TitleEntry {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumb_url: Option<String>,
     #[serde(default)]
     pub ts: u64,
 }
@@ -243,46 +245,64 @@ impl Store {
         self.with(|d| d.cache.len())
     }
 
-    /// First hit among `keys`, checking both title cache and media cache.
-    pub fn find_cached_title(&self, keys: &[String]) -> Option<String> {
+    /// First hit among `keys`, returning (title, thumb_url).
+    pub fn find_cached_meta(&self, keys: &[String]) -> Option<(String, Option<String>)> {
         for key in keys {
-            if let Some(t) = self.title_find(key) {
-                if !t.trim().is_empty() {
-                    return Some(t);
+            if let Some(res) = self.meta_find(key) {
+                if !res.0.trim().is_empty() {
+                    return Some(res);
                 }
             }
             if let Some(entry) = self.with(|d| d.cache.get(key).cloned()) {
                 if !entry.title.trim().is_empty() {
-                    return Some(entry.title);
+                    return Some((entry.title, None));
                 }
             }
         }
         None
     }
 
-    /// Look up a title in the evicting title cache. Updates access time (LRU).
-    pub fn title_find(&self, key: &str) -> Option<String> {
+    /// First hit among `keys`, checking both title cache and media cache.
+    #[allow(dead_code)]
+    pub fn find_cached_title(&self, keys: &[String]) -> Option<String> {
+        self.find_cached_meta(keys).map(|(t, _)| t)
+    }
+
+    /// Look up metadata in the evicting title cache. Updates access time (LRU).
+    pub fn meta_find(&self, key: &str) -> Option<(String, Option<String>)> {
         let now = now_secs();
         self.with(|d| {
             if let Some(entry) = d.titles.get_mut(key) {
                 entry.ts = now;
-                Some(entry.title.clone())
+                Some((entry.title.clone(), entry.thumb_url.clone()))
             } else {
                 None
             }
         })
     }
 
-    /// Store a title in the evicting title cache. When MAX_TITLES is exceeded,
-    /// the oldest 10% is evicted.
-    pub fn title_put(&self, key: &str, title: &str) {
+    /// Look up a title in the evicting title cache. Updates access time (LRU).
+    #[allow(dead_code)]
+    pub fn title_find(&self, key: &str) -> Option<String> {
+        self.meta_find(key).map(|(t, _)| t)
+    }
+
+    /// Store metadata in the evicting title cache.
+    pub fn meta_put(&self, key: &str, title: &str, thumb_url: Option<&str>) {
         let trimmed = title.trim();
         if key.is_empty() || trimmed.is_empty() {
             return;
         }
         let ts = now_secs();
         self.with(|d| {
-            d.titles.insert(key.to_string(), TitleEntry { title: trimmed.to_string(), ts });
+            d.titles.insert(
+                key.to_string(),
+                TitleEntry {
+                    title: trimmed.to_string(),
+                    thumb_url: thumb_url.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+                    ts,
+                },
+            );
             if d.titles.len() > MAX_TITLES {
                 let mut oldest: Vec<(u64, String)> = d.titles.iter().map(|(k, e)| (e.ts, k.clone())).collect();
                 oldest.sort_unstable();
@@ -292,6 +312,13 @@ impl Store {
             }
         });
         self.dirty.store(true, Ordering::Relaxed);
+    }
+
+    /// Store a title in the evicting title cache. When MAX_TITLES is exceeded,
+    /// the oldest 10% is evicted.
+    pub fn title_put(&self, key: &str, title: &str) {
+        let existing_thumb = self.with(|d| d.titles.get(key).and_then(|e| e.thumb_url.clone()));
+        self.meta_put(key, title, existing_thumb.as_deref());
     }
 
     pub fn clear_cache(&self) -> usize {
@@ -551,6 +578,14 @@ mod tests {
         assert!(store.with(|d| d.titles.len()) <= MAX_TITLES);
         // The most recently added entries must be present
         assert_eq!(store.title_find(&format!("key_{}", MAX_TITLES + 40)), Some(format!("Title {}", MAX_TITLES + 40)));
+
+        store.meta_put("yt:123", "Cool Video", Some("https://example.com/thumb.jpg"));
+        assert_eq!(
+            store.find_cached_meta(&["yt:123".to_string()]),
+            Some(("Cool Video".to_string(), Some("https://example.com/thumb.jpg".to_string())))
+        );
+        assert_eq!(store.find_cached_title(&["yt:123".to_string()]), Some("Cool Video".to_string()));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

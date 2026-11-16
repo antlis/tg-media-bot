@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -55,6 +55,8 @@ pub struct Job {
     /// Bytes of the current upload that have left the process.
     pub sent: Arc<AtomicU64>,
     pub title: Mutex<Option<String>>,
+    pub thumb_url: Mutex<Option<String>>,
+    pub is_photo_status: AtomicBool,
 }
 
 impl Job {
@@ -67,6 +69,18 @@ impl Job {
         let trimmed = s.trim();
         if !trimmed.is_empty() {
             *lock(&self.title) = Some(trimmed.to_string());
+        }
+    }
+
+    pub fn thumb_url(&self) -> Option<String> {
+        lock(&self.thumb_url).clone()
+    }
+
+    pub fn set_thumb_url(&self, thumb_url: impl Into<String>) {
+        let s = thumb_url.into();
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            *lock(&self.thumb_url) = Some(trimmed.to_string());
         }
     }
 }
@@ -273,8 +287,15 @@ pub fn render_status(job: &Job) -> String {
     let _ = write!(text, "<b>{}</b> · {}", stage_label(t, &stage), job.quality.label(t));
     if let Some(title) = job.title() {
         if !title.trim().is_empty() {
-            let _ = write!(text, "\n🎬 <b>{}</b>", html_escape(&title));
+            let _ = write!(text, "\n🎬 <a href=\"{}\"><b>{}</b></a>", html_escape(&job.url), html_escape(&title));
         }
+    } else {
+        let _ = write!(
+            text,
+            "\n🎬 <a href=\"{}\"><b>{}</b></a>",
+            html_escape(&job.url),
+            html_escape(util::truncate_chars(&job.url, 40))
+        );
     }
     let bar = |dest: &mut String, pct: f32| {
         let _ = write!(dest, "\n<code>{}</code> {pct:.0}%", util::progress_bar(pct));
@@ -538,8 +559,12 @@ impl App {
             id = self.new_id(self.next_seq());
         }
         let (stage, _) = watch::channel(Stage::Queued);
-        let cached_title =
-            self.store.find_cached_title(&[key.clone(), video_key.clone()]).filter(|t| !t.trim().is_empty());
+        let cached_meta = self.store.find_cached_meta(&[key.clone(), video_key.clone()]);
+        let cached_title = cached_meta.as_ref().map(|(t, _)| t.clone()).filter(|t| !t.trim().is_empty());
+        let mut cached_thumb = cached_meta.and_then(|(_, th)| th);
+        if cached_thumb.is_none() {
+            cached_thumb = crate::meta::quick_thumb(&req.url);
+        }
         let job = Arc::new(Job {
             id: id.clone(),
             seq,
@@ -556,6 +581,8 @@ impl App {
             stage,
             sent: Arc::new(AtomicU64::new(0)),
             title: Mutex::new(cached_title.clone()),
+            thumb_url: Mutex::new(cached_thumb),
+            is_photo_status: AtomicBool::new(false),
         });
         log::info!(
             "job {} queued: user={} chat={} quality={} url={}",
@@ -585,21 +612,33 @@ impl App {
         if let Some(entry) = jobs.get_mut(&id) {
             entry.abort = Some(handle.abort_handle());
         }
-        if cached_title.is_none() {
+        if cached_title.is_none() || job.thumb_url().is_none() {
             let app = self.clone();
             let job_arc = job.clone();
             let url = req.url.clone();
             let vkey = video_key.clone();
             tokio::spawn(async move {
-                if let Some(title) = app.meta.resolve(&url).await {
+                let meta = app.meta.resolve_meta(&url).await;
+                let mut changed = false;
+                if let Some(title) = meta.title {
                     job_arc.set_title(&title);
-                    app.store.title_put(&vkey, &title);
-                    log::debug!("resolved title for job {}: {title}", job_arc.id);
+                    changed = true;
+                }
+                if let Some(thumb) = meta.thumb_url {
+                    if job_arc.thumb_url().is_none() {
+                        job_arc.set_thumb_url(&thumb);
+                    }
+                }
+                if let Some(t) = job_arc.title() {
+                    app.store.meta_put(&vkey, &t, job_arc.thumb_url().as_deref());
+                    log::debug!("resolved meta for job {}: title={t}, thumb={:?}", job_arc.id, job_arc.thumb_url());
+                }
+                if changed {
                     if let Some(msg_id) = app.status_msg(&job_arc.id) {
                         if !job_arc.minimal {
                             let markup = cancel_markup(job_arc.lang.t(), &job_arc.id);
                             let text = render_status(&job_arc);
-                            app.edit_status(job_arc.chat_id, msg_id, &text, Some(markup)).await;
+                            app.edit_status(&job_arc, msg_id, &text, Some(markup)).await;
                         }
                     }
                 }
@@ -612,7 +651,7 @@ impl App {
         lock(&self.jobs).get(id).and_then(|e| e.status_msg)
     }
 
-    fn set_status_msg(&self, id: &str, msg: i64) {
+    pub(crate) fn set_status_msg(&self, id: &str, msg: i64) {
         if let Some(e) = lock(&self.jobs).get_mut(id) {
             e.status_msg = Some(msg);
         }
@@ -716,9 +755,7 @@ impl App {
         log::info!("job {id} cancelled by {user_id}");
         let t = entry.job.lang.t();
         if let Some(msg) = entry.status_msg {
-            if let Err(e) = self.bot.edit_message(entry.job.chat_id, msg, t.cancelled, None).await {
-                log::debug!("edit after cancel failed: {e}");
-            }
+            self.edit_status(&entry.job, msg, t.cancelled, None).await;
         } else {
             self.say(entry.job.chat_id, entry.job.thread_id, t.cancelled, None).await;
         }
@@ -742,11 +779,7 @@ impl App {
         for entry in &removed {
             if let Some(msg) = entry.status_msg {
                 let t = entry.job.lang.t();
-                if let Err(e) = self.bot.edit_message(entry.job.chat_id, msg, t.cancelled, None).await {
-                    if e.retry_after().is_some() {
-                        break;
-                    }
-                }
+                self.edit_status(&entry.job, msg, t.cancelled, None).await;
             }
         }
         log::info!("user {user_id} cancelled {} job(s)", removed.len());
@@ -768,16 +801,99 @@ impl App {
 
     // -- status message -----------------------------------------------------
 
-    async fn edit_status(&self, chat_id: i64, msg_id: i64, text: &str, markup: Option<Value>) {
-        if lock(&self.edit_block).get(&chat_id).is_some_and(|until| Instant::now() < *until) {
+    async fn edit_status(&self, job: &Job, msg_id: i64, text: &str, markup: Option<Value>) {
+        if lock(&self.edit_block).get(&job.chat_id).is_some_and(|until| Instant::now() < *until) {
             return;
         }
-        if let Err(e) = self.bot.edit_message(chat_id, msg_id, text, markup).await {
-            if let Some(secs) = e.retry_after() {
-                lock(&self.edit_block).insert(chat_id, Instant::now() + Duration::from_secs(secs));
+        let is_photo = job.is_photo_status.load(Ordering::Relaxed);
+        let res = if is_photo {
+            self.bot.edit_message_caption(job.chat_id, msg_id, text, markup.clone()).await
+        } else {
+            self.bot.edit_message(job.chat_id, msg_id, text, markup.clone()).await
+        };
+        match res {
+            Ok(_) => {}
+            Err(_e) => {
+                // If message type was mismatched, fallback to the other method
+                let fallback = if is_photo {
+                    self.bot.edit_message(job.chat_id, msg_id, text, markup).await
+                } else {
+                    self.bot.edit_message_caption(job.chat_id, msg_id, text, markup).await
+                };
+                match fallback {
+                    Ok(_) => {
+                        job.is_photo_status.store(!is_photo, Ordering::Relaxed);
+                    }
+                    Err(e2) => {
+                        if let Some(secs) = e2.retry_after() {
+                            lock(&self.edit_block).insert(job.chat_id, Instant::now() + Duration::from_secs(secs));
+                        }
+                        log::debug!("status edit failed: {e2}");
+                    }
+                }
             }
-            log::debug!("status edit failed: {e}");
         }
+    }
+
+    /// Post a status message (photo with preview if thumbnail is available, otherwise text).
+    /// If in a private chat (DM), deletes the user's message immediately.
+    pub async fn deliver_status(&self, job: &Job, markup: Option<Value>) -> Option<i64> {
+        if job.thumb_url().is_none() {
+            if let Some(qt) = crate::meta::quick_thumb(&job.url) {
+                job.set_thumb_url(qt);
+            }
+        }
+
+        let text = render_status(job);
+        let reply_to = if job.chat_id < 0 { job.user_msg_id } else { None };
+
+        let mut sent_msg = None;
+        if let Some(thumb) = job.thumb_url() {
+            for _ in 0..=FLOOD_RETRIES {
+                match self.bot.send_photo(job.chat_id, job.thread_id, &thumb, &text, markup.clone(), reply_to).await {
+                    Ok(m) => {
+                        job.is_photo_status.store(true, Ordering::Relaxed);
+                        sent_msg = Some(m.message_id);
+                        break;
+                    }
+                    Err(e) if e.retry_after().is_some_and(|s| s <= FLOOD_MAX_WAIT) => {
+                        tokio::time::sleep(Duration::from_secs(e.retry_after().unwrap_or(1) + 1)).await;
+                    }
+                    Err(e) => {
+                        log::debug!("send_photo for job {} failed, falling back to sendMessage: {e}", job.id);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if sent_msg.is_none() {
+            for _ in 0..=FLOOD_RETRIES {
+                match self.bot.send_message(job.chat_id, job.thread_id, &text, markup.clone(), reply_to).await {
+                    Ok(m) => {
+                        job.is_photo_status.store(false, Ordering::Relaxed);
+                        sent_msg = Some(m.message_id);
+                        break;
+                    }
+                    Err(e) if e.retry_after().is_some_and(|s| s <= FLOOD_MAX_WAIT) => {
+                        tokio::time::sleep(Duration::from_secs(e.retry_after().unwrap_or(1) + 1)).await;
+                    }
+                    Err(e) => {
+                        log::warn!("could not post status of job {}: {e}", job.id);
+                        return None;
+                    }
+                }
+            }
+        }
+
+        // If in private chat (DM), delete the user's message immediately now that status is posted
+        if job.chat_id > 0 {
+            if let Some(user_msg) = job.user_msg_id {
+                let _ = self.bot.delete_message(job.chat_id, user_msg).await;
+            }
+        }
+
+        sent_msg
     }
 
     /// Send or edit, waiting out flood control instead of dropping the message.
@@ -852,7 +968,7 @@ impl App {
             if stage_changed || (time_elapsed && significant_progress) {
                 let text = render_status(job);
                 if text != last_text {
-                    self.edit_status(job.chat_id, msg_id, &text, Some(markup.clone())).await;
+                    self.edit_status(job, msg_id, &text, Some(markup.clone())).await;
                     last_text = text;
                     last_pct = current_pct;
                     last_stage_name = current_stage_name;
@@ -1070,9 +1186,11 @@ async fn run_job(app: Arc<App>, job: Arc<Job>) {
             if let Some(msg) = app.status_msg(&job.id) {
                 let _ = app.bot.delete_message(job.chat_id, msg).await;
             }
-            if let Some(user_msg) = job.user_msg_id {
-                if let Err(e) = app.bot.delete_message(job.chat_id, user_msg).await {
-                    log::debug!("could not delete user message: {e}");
+            if job.chat_id > 0 {
+                if let Some(user_msg) = job.user_msg_id {
+                    if let Err(e) = app.bot.delete_message(job.chat_id, user_msg).await {
+                        log::debug!("could not delete user message: {e}");
+                    }
                 }
             }
             return;
@@ -1086,7 +1204,7 @@ async fn run_job(app: Arc<App>, job: Arc<Job>) {
     let mut status_msg = app.status_msg(&job.id);
     if status_msg.is_none() && !job.minimal {
         let markup = cancel_markup(job.lang.t(), &job.id);
-        status_msg = app.deliver(&job, None, &render_status(&job), Some(markup), None).await;
+        status_msg = app.deliver_status(&job, Some(markup)).await;
         if let Some(id) = status_msg {
             app.set_status_msg(&job.id, id);
         }
@@ -1108,14 +1226,17 @@ async fn run_job(app: Arc<App>, job: Arc<Job>) {
     match result {
         Ok(()) => {
             log::info!("job {} done in {:.0?}", job.id, started.elapsed());
-            if let Some(msg) = status_msg {
+            let to_delete = app.status_msg(&job.id).or(status_msg);
+            if let Some(msg) = to_delete {
                 if let Err(e) = app.bot.delete_message(job.chat_id, msg).await {
-                    log::debug!("could not delete status message: {e}");
+                    log::warn!("could not delete status message {msg} for job {}: {e}", job.id);
                 }
             }
-            if let Some(user_msg) = job.user_msg_id {
-                if let Err(e) = app.bot.delete_message(job.chat_id, user_msg).await {
-                    log::debug!("could not delete user message: {e}");
+            if job.chat_id > 0 {
+                if let Some(user_msg) = job.user_msg_id {
+                    if let Err(e) = app.bot.delete_message(job.chat_id, user_msg).await {
+                        log::debug!("could not delete user message: {e}");
+                    }
                 }
             }
         }
@@ -1154,11 +1275,13 @@ async fn run_job(app: Arc<App>, job: Arc<Job>) {
                 None
             };
 
-            if let Some(msg) = status_msg {
+            let to_delete = app.status_msg(&job.id).or(status_msg);
+            if let Some(msg) = to_delete {
                 let _ = app.bot.delete_message(job.chat_id, msg).await;
             }
             let text = error_text(job.lang.t(), &app.cfg, &err, &job.url);
-            app.deliver(&job, None, &text, markup, job.user_msg_id).await;
+            let reply_to = if job.chat_id < 0 { job.user_msg_id } else { None };
+            app.deliver(&job, None, &text, markup, reply_to).await;
         }
     }
 }
@@ -1218,6 +1341,8 @@ mod tests {
             stage: watch::channel(Stage::Queued).0,
             sent: Arc::new(AtomicU64::new(0)),
             title: Mutex::new(None),
+            thumb_url: Mutex::new(None),
+            is_photo_status: AtomicBool::new(false),
         }
     }
 
@@ -1240,5 +1365,17 @@ mod tests {
         assert_eq!(other.key, "url:https://example.com/v|a");
         let p = Probed { video_key: Some("example:42".into()), kind: Kind::Audio, height: None };
         assert_eq!(store_keys(&other, &p), vec!["example:42|a".to_string(), "url:https://example.com/v|a".to_string()]);
+    }
+
+    #[test]
+    fn render_status_includes_clickable_link_and_title() {
+        let j = job("https://example.com/watch?v=123", Quality::Max);
+        j.set_title("Amazing Cat Video");
+        let text = render_status(&j);
+        assert!(text.contains("<a href=\"https://example.com/watch?v=123\"><b>Amazing Cat Video</b></a>"));
+
+        let j2 = job("https://example.com/v", Quality::Max);
+        let text2 = render_status(&j2);
+        assert!(text2.contains("<a href=\"https://example.com/v\">"));
     }
 }

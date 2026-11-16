@@ -1,6 +1,6 @@
 [package]
 name = "tg-media-bot"
-version = "1.0.6"
+version = "1.0.9"
 edition = "2021"
 license = "MIT"
 description = "Lightweight self-hosted Telegram media downloader bot (yt-dlp + ffmpeg)"

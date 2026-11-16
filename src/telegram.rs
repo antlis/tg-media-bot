@@ -307,6 +307,36 @@ impl Bot {
         self.call("sendMessage", &body, SHORT_TIMEOUT).await
     }
 
+    pub async fn send_photo(
+        &self,
+        chat_id: i64,
+        thread_id: Option<i64>,
+        photo: &str,
+        caption: &str,
+        markup: Option<Value>,
+        reply_to: Option<i64>,
+    ) -> Result<Message, TgError> {
+        let mut body = json!({
+            "chat_id": chat_id,
+            "photo": photo,
+            "caption": caption,
+            "parse_mode": "HTML",
+        });
+        if let Some(t) = thread_id {
+            body["message_thread_id"] = json!(t);
+        }
+        if let Some(m) = markup {
+            body["reply_markup"] = m;
+        }
+        if let Some(r) = reply_to {
+            body["reply_parameters"] = json!({
+                "message_id": r,
+                "allow_sending_without_reply": true,
+            });
+        }
+        self.call("sendPhoto", &body, SHORT_TIMEOUT).await
+    }
+
     /// Edit a message's text; passing no markup removes any inline keyboard.
     pub async fn edit_message(
         &self,
@@ -333,9 +363,43 @@ impl Bot {
         }
     }
 
+    /// Edit a media message's caption; passing no markup removes any inline keyboard.
+    pub async fn edit_message_caption(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        caption: &str,
+        markup: Option<Value>,
+    ) -> Result<(), TgError> {
+        let mut body = json!({
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "caption": caption,
+            "parse_mode": "HTML",
+        });
+        if let Some(m) = markup {
+            body["reply_markup"] = m;
+        }
+        match self.call::<IgnoredAny>("editMessageCaption", &body, SHORT_TIMEOUT).await {
+            Ok(_) => Ok(()),
+            Err(TgError::Api { desc, .. }) if desc.contains("message is not modified") => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn delete_message(&self, chat_id: i64, message_id: i64) -> Result<(), TgError> {
         let body = json!({ "chat_id": chat_id, "message_id": message_id });
-        self.call::<IgnoredAny>("deleteMessage", &body, SHORT_TIMEOUT).await.map(|_| ())
+        for _ in 0..=3 {
+            match self.call::<IgnoredAny>("deleteMessage", &body, SHORT_TIMEOUT).await {
+                Ok(_) => return Ok(()),
+                Err(e) if e.retry_after().is_some_and(|s| s <= 30) => {
+                    tokio::time::sleep(Duration::from_secs(e.retry_after().unwrap_or(1) + 1)).await;
+                }
+                Err(TgError::Api { desc, .. }) if desc.contains("message to delete not found") => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
     }
 
     pub async fn send_chat_action(&self, chat_id: i64, action: &str, thread_id: Option<i64>) -> Result<(), TgError> {
